@@ -1,0 +1,17 @@
+/data/
+/indexes/
+/artifacts/private/
+/benchmarks/raw/
+
+/.env
+/.env.*
+!/.env.example
+
+/bin/
+*.test
+*.prof
+coverage.out
+
+/.idea/
+/.vscode/
+.DS_Store
