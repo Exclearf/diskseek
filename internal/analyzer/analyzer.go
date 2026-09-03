@@ -1,0 +1,59 @@
+package analyzer
+
+import (
+	"errors"
+	"strings"
+	"unicode"
+	"unicode/utf8"
+
+	"golang.org/x/text/cases"
+	"golang.org/x/text/unicode/norm"
+)
+
+// ErrInvalidUTF8 reports that analyzer input is not valid UTF-8.
+var ErrInvalidUTF8 = errors.New("invalid UTF-8")
+
+// Analyze converts valid UTF-8 text into normalized search tokens.
+func Analyze(text string) ([]string, error) {
+	if !utf8.ValidString(text) {
+		return nil, ErrInvalidUTF8
+	}
+
+	text = norm.NFC.String(text)
+	text = cases.Fold().String(text)
+	text = norm.NFC.String(text)
+
+	runes := []rune(text)
+	var tokens []string
+	var token strings.Builder
+
+	flush := func() {
+		if token.Len() == 0 {
+			return
+		}
+		tokens = append(tokens, token.String())
+		token.Reset()
+	}
+
+	for i, r := range runes {
+		switch {
+		case isTokenRune(r):
+			token.WriteRune(r)
+		case isApostrophe(r) && token.Len() > 0 && i+1 < len(runes) && isTokenRune(runes[i+1]):
+			token.WriteByte('\'')
+		default:
+			flush()
+		}
+	}
+	flush()
+
+	return tokens, nil
+}
+
+func isTokenRune(r rune) bool {
+	return unicode.IsLetter(r) || unicode.IsNumber(r)
+}
+
+func isApostrophe(r rune) bool {
+	return r == '\'' || r == '’'
+}
