@@ -19,7 +19,9 @@ func Analyze(text string) ([]string, error) {
 		return nil, ErrInvalidUTF8
 	}
 
-	text = norm.NFC.String(text)
+	// Decompose before folding for canonical caseless matching, then store NFC.
+	// See https://www.unicode.org/versions/Unicode17.0.0/core-spec/chapter-3/#G53523
+	text = norm.NFD.String(text)
 	text = cases.Fold().String(text)
 	text = norm.NFC.String(text)
 
