@@ -1,7 +1,9 @@
 package segment
 
 import (
+	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +15,7 @@ import (
 func TestBuildCreatesOwnedArtifacts(t *testing.T) {
 	parent := t.TempDir()
 	result, err := build(
+		context.Background(),
 		corpus.NewTSVReader(strings.NewReader("0\ta\n")),
 		segmentBufferBytes,
 		parent,
@@ -49,6 +52,7 @@ func TestBuildRemovesOnlyOwnedArtifactsAfterCorpusError(t *testing.T) {
 	}
 
 	_, err := build(
+		context.Background(),
 		corpus.NewTSVReader(strings.NewReader("0\ta\n1\tb\nbroken\n")),
 		segmentBufferBytes,
 		parent,
@@ -66,9 +70,32 @@ func TestBuildRemovesOnlyOwnedArtifactsAfterCorpusError(t *testing.T) {
 	}
 }
 
+func TestBuildRemovesArtifactsAfterCancellation(t *testing.T) {
+	parent := t.TempDir()
+	ctx, cancel := context.WithCancel(context.Background())
+	_, err := build(
+		ctx,
+		corpus.NewTSVReader(&cancelOnSecondRead{cancel: cancel}),
+		segmentBufferBytes,
+		parent,
+	)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("build() error = %v, want %v", err, context.Canceled)
+	}
+
+	entries, err := os.ReadDir(parent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("temporary parent entries = %v, want none", entries)
+	}
+}
+
 func TestBuildRejectsZeroFlushTargetWithoutCreatingArtifacts(t *testing.T) {
 	parent := t.TempDir()
 	_, err := build(
+		context.Background(),
 		corpus.NewTSVReader(strings.NewReader("")),
 		0,
 		parent,
@@ -83,5 +110,24 @@ func TestBuildRejectsZeroFlushTargetWithoutCreatingArtifacts(t *testing.T) {
 	}
 	if len(entries) != 0 {
 		t.Fatalf("temporary parent entries = %v, want none", entries)
+	}
+}
+
+type cancelOnSecondRead struct {
+	cancel context.CancelFunc
+	reads  int
+}
+
+func (r *cancelOnSecondRead) Read(buffer []byte) (int, error) {
+	switch r.reads {
+	case 0:
+		r.reads++
+		return copy(buffer, "0\ta\n"), nil
+	case 1:
+		r.reads++
+		r.cancel()
+		return copy(buffer, "1\tb\n"), nil
+	default:
+		return 0, io.EOF
 	}
 }

@@ -2,6 +2,7 @@ package segment
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"reflect"
 	"strings"
@@ -41,6 +42,7 @@ func TestBuildRunsAtDocumentBoundaries(t *testing.T) {
 			var outputs []*bufferWriteCloser
 			documentOutput := &bufferWriteCloser{}
 			_, err := buildRuns(
+				context.Background(),
 				corpus.NewTSVReader(strings.NewReader(test.input)),
 				test.target,
 				documentOutput,
@@ -72,6 +74,7 @@ func TestBuildRunsAtDocumentBoundaries(t *testing.T) {
 func TestBuildRunsWritesDocumentMetadataAndStatistics(t *testing.T) {
 	documentOutput := &bufferWriteCloser{}
 	stats, err := buildRuns(
+		context.Background(),
 		corpus.NewTSVReader(strings.NewReader("shared\ta a\nshared\t---\nlast\tb\n")),
 		segmentBufferBytes+1024,
 		documentOutput,

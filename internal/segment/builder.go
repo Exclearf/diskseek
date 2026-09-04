@@ -1,6 +1,7 @@
 package segment
 
 import (
+	"context"
 	"errors"
 	"io"
 
@@ -16,6 +17,7 @@ type buildStats struct {
 }
 
 func buildRuns(
+	ctx context.Context,
 	records *corpus.TSVReader,
 	flushTarget uint64,
 	documentOutput io.WriteCloser,
@@ -31,6 +33,9 @@ func buildRuns(
 
 	segment := newSegmentState(0)
 	flush := func() error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		output, err := createOutput()
 		if err != nil {
 			return err
@@ -38,11 +43,17 @@ func buildRuns(
 		if err := segment.writeRun(output); err != nil {
 			return err
 		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		segment = newSegmentState(index.DocumentID(stats.documentCount))
 		return nil
 	}
 
 	for {
+		if err := ctx.Err(); err != nil {
+			return buildStats{}, err
+		}
 		record, err := records.Next()
 		if err == io.EOF {
 			break
@@ -56,6 +67,9 @@ func buildRuns(
 
 		tokens, err := analyzer.Analyze(record.Text)
 		if err != nil {
+			return buildStats{}, err
+		}
+		if err := ctx.Err(); err != nil {
 			return buildStats{}, err
 		}
 		documentLength := uint32(len(tokens))

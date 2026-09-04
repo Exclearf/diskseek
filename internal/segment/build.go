@@ -1,6 +1,7 @@
 package segment
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -17,12 +18,16 @@ type buildResult struct {
 }
 
 func build(
+	ctx context.Context,
 	records *corpus.TSVReader,
 	flushTarget uint64,
 	temporaryDirectory string,
 ) (result buildResult, err error) {
 	if flushTarget == 0 {
 		return buildResult{}, errors.New("segment flush target must be positive")
+	}
+	if err := ctx.Err(); err != nil {
+		return buildResult{}, err
 	}
 
 	directory, err := os.MkdirTemp(temporaryDirectory, "diskseek-build-*")
@@ -41,7 +46,7 @@ func build(
 	}
 
 	var runPaths []string
-	stats, err := buildRuns(records, flushTarget, documents, func() (io.WriteCloser, error) {
+	stats, err := buildRuns(ctx, records, flushTarget, documents, func() (io.WriteCloser, error) {
 		run, err := os.CreateTemp(directory, "run-*")
 		if err != nil {
 			return nil, fmt.Errorf("create run: %w", err)
