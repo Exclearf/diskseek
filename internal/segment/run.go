@@ -35,6 +35,25 @@ func writeRunHeader(writer io.Writer, header runHeader) error {
 	return nil
 }
 
+func readRunHeader(reader io.Reader) (runHeader, error) {
+	var encoded [runHeaderBytes]byte
+	if _, err := io.ReadFull(reader, encoded[:]); err != nil {
+		return runHeader{}, fmt.Errorf("read run header: %w", err)
+	}
+	if string(encoded[:8]) != runMagic {
+		return runHeader{}, errors.New("invalid run magic")
+	}
+
+	header := runHeader{
+		firstDocumentID: index.DocumentID(binary.LittleEndian.Uint32(encoded[8:12])),
+		documentCount:   binary.LittleEndian.Uint64(encoded[12:20]),
+	}
+	if err := validateRunHeader(header); err != nil {
+		return runHeader{}, err
+	}
+	return header, nil
+}
+
 func validateRunHeader(header runHeader) error {
 	if header.documentCount == 0 {
 		if header.firstDocumentID != 0 {

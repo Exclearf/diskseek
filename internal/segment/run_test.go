@@ -8,16 +8,42 @@ import (
 	"github.com/Exclearf/diskseek/internal/index"
 )
 
-func TestWriteRunHeader(t *testing.T) {
+func TestRunHeaderRoundTripAndBytes(t *testing.T) {
 	var output bytes.Buffer
-	header := runHeader{firstDocumentID: 7, documentCount: 3}
+	header := runHeader{documentCount: documentIDLimit}
 	if err := writeRunHeader(&output, header); err != nil {
 		t.Fatal(err)
 	}
 
-	const want = "44534b52554e3031070000000300000000000000"
+	const want = "44534b52554e3031000000000000000001000000"
 	if got := hex.EncodeToString(output.Bytes()); got != want {
 		t.Fatalf("header bytes = %s, want %s", got, want)
+	}
+
+	got, err := readRunHeader(bytes.NewReader(output.Bytes()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != header {
+		t.Fatalf("readRunHeader() = %+v, want %+v", got, header)
+	}
+}
+
+func TestReadRunHeaderRejectsInvalidData(t *testing.T) {
+	tests := []struct {
+		name string
+		data []byte
+	}{
+		{name: "wrong magic", data: make([]byte, runHeaderBytes)},
+		{name: "truncated header", data: []byte(runMagic)},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := readRunHeader(bytes.NewReader(test.data)); err == nil {
+				t.Fatal("readRunHeader() error = nil")
+			}
+		})
 	}
 }
 
