@@ -1,6 +1,7 @@
 package segment
 
 import (
+	"bufio"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 const (
 	runMagic        = "DSKRUN01"
 	runHeaderBytes  = 20
+	runBufferBytes  = 32 << 10
 	maxRunTermBytes = 1 << 20
 	documentIDLimit = uint64(1) << 32
 )
@@ -20,6 +22,30 @@ const (
 type runHeader struct {
 	firstDocumentID index.DocumentID
 	documentCount   uint64
+}
+
+type runWriter struct {
+	output io.WriteCloser
+	writer *bufio.Writer
+}
+
+func newRunWriter(output io.WriteCloser, header runHeader) (*runWriter, error) {
+	w := &runWriter{
+		output: output,
+		writer: bufio.NewWriterSize(output, runBufferBytes),
+	}
+	if err := writeRunHeader(w.writer, header); err != nil {
+		return nil, errors.Join(err, output.Close())
+	}
+	return w, nil
+}
+
+func (w *runWriter) close() error {
+	var end [4]byte
+	_, endErr := w.writer.Write(end[:])
+	flushErr := w.writer.Flush()
+	closeErr := w.output.Close()
+	return errors.Join(endErr, flushErr, closeErr)
 }
 
 func writeRunHeader(writer io.Writer, header runHeader) error {

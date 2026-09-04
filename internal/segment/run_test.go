@@ -191,6 +191,37 @@ func TestReadRunPostingRejectsInvalidData(t *testing.T) {
 	}
 }
 
+func TestEmptyRunWriterBytes(t *testing.T) {
+	output := &bufferWriteCloser{}
+	writer, err := newRunWriter(output, runHeader{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.close(); err != nil {
+		t.Fatal(err)
+	}
+
+	const want = "44534b52554e303100000000000000000000000000000000"
+	if got := hex.EncodeToString(output.Bytes()); got != want {
+		t.Fatalf("run bytes = %s, want %s", got, want)
+	}
+}
+
+func TestRunWriterCloseReportsFlushAndCloseErrors(t *testing.T) {
+	writeErr := errors.New("write failed")
+	closeErr := errors.New("close failed")
+	output := &failingWriteCloser{writeErr: writeErr, closeErr: closeErr}
+	writer, err := newRunWriter(output, runHeader{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = writer.close()
+	if !errors.Is(err, writeErr) || !errors.Is(err, closeErr) {
+		t.Fatalf("close() error = %v, want write and close errors", err)
+	}
+}
+
 func TestRunHeaderDocumentInterval(t *testing.T) {
 	header := runHeader{firstDocumentID: 7, documentCount: 3}
 	if err := validateRunHeader(header); err != nil {
@@ -211,6 +242,27 @@ func TestRunHeaderDocumentInterval(t *testing.T) {
 			t.Errorf("documentInRun(%d) = %t, want %t", test.documentID, got, test.want)
 		}
 	}
+}
+
+type bufferWriteCloser struct {
+	bytes.Buffer
+}
+
+func (*bufferWriteCloser) Close() error {
+	return nil
+}
+
+type failingWriteCloser struct {
+	writeErr error
+	closeErr error
+}
+
+func (w *failingWriteCloser) Write([]byte) (int, error) {
+	return 0, w.writeErr
+}
+
+func (w *failingWriteCloser) Close() error {
+	return w.closeErr
 }
 
 func TestRunHeaderRejectsInvalidInterval(t *testing.T) {
