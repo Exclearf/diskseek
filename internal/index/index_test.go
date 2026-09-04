@@ -1,6 +1,7 @@
 package index
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"reflect"
@@ -11,13 +12,12 @@ import (
 )
 
 func TestBuild(t *testing.T) {
-	input, err := os.Open("testdata/corpus.tsv")
+	input, err := os.ReadFile("testdata/corpus.tsv")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer input.Close()
 
-	got, err := Build(corpus.NewTSVReader(input))
+	got, err := Build(corpus.NewTSVReader(bytes.NewReader(input)))
 	if err != nil {
 		t.Fatal(err)
 	}

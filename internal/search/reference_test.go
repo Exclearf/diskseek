@@ -1,6 +1,7 @@
 package search
 
 import (
+	"bytes"
 	"math"
 	"os"
 	"testing"
@@ -10,13 +11,12 @@ import (
 )
 
 func TestReferenceSearch(t *testing.T) {
-	input, err := os.Open("../index/testdata/corpus.tsv")
+	input, err := os.ReadFile("../index/testdata/corpus.tsv")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer input.Close()
 
-	idx, err := index.Build(corpus.NewTSVReader(input))
+	idx, err := index.Build(corpus.NewTSVReader(bytes.NewReader(input)))
 	if err != nil {
 		t.Fatal(err)
 	}
