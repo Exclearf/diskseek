@@ -25,14 +25,19 @@ type runHeader struct {
 }
 
 type runWriter struct {
-	output io.WriteCloser
-	writer *bufio.Writer
+	output            io.WriteCloser
+	writer            *bufio.Writer
+	header            runHeader
+	postingsRemaining uint64
+	err               error
+	closed            bool
 }
 
 func newRunWriter(output io.WriteCloser, header runHeader) (*runWriter, error) {
 	w := &runWriter{
 		output: output,
 		writer: bufio.NewWriterSize(output, runBufferBytes),
+		header: header,
 	}
 	if err := writeRunHeader(w.writer, header); err != nil {
 		return nil, errors.Join(err, output.Close())
@@ -40,12 +45,68 @@ func newRunWriter(output io.WriteCloser, header runHeader) (*runWriter, error) {
 	return w, nil
 }
 
+func (w *runWriter) writeTerm(term string, postingCount uint64) error {
+	if err := w.ready(); err != nil {
+		return err
+	}
+	if w.postingsRemaining != 0 {
+		return w.fail(errors.New("previous run term has unwritten postings"))
+	}
+	if err := writeRunTermHeader(w.writer, w.header, term, postingCount); err != nil {
+		return w.fail(err)
+	}
+
+	w.postingsRemaining = postingCount
+	return nil
+}
+
+func (w *runWriter) writePosting(posting index.Posting) error {
+	if err := w.ready(); err != nil {
+		return err
+	}
+	if w.postingsRemaining == 0 {
+		return w.fail(errors.New("run posting has no active term"))
+	}
+	if err := writeRunPosting(w.writer, w.header, posting); err != nil {
+		return w.fail(err)
+	}
+
+	w.postingsRemaining--
+	return nil
+}
+
 func (w *runWriter) close() error {
-	var end [4]byte
-	_, endErr := w.writer.Write(end[:])
+	if w.closed {
+		return errors.New("run writer is already closed")
+	}
+	w.closed = true
+
+	var stateErr error
+	if w.postingsRemaining != 0 {
+		stateErr = errors.New("run is incomplete")
+	}
+	var endErr error
+	if w.err == nil && stateErr == nil {
+		var end [4]byte
+		_, endErr = w.writer.Write(end[:])
+	}
 	flushErr := w.writer.Flush()
 	closeErr := w.output.Close()
-	return errors.Join(endErr, flushErr, closeErr)
+	return errors.Join(w.err, stateErr, endErr, flushErr, closeErr)
+}
+
+func (w *runWriter) ready() error {
+	if w.closed {
+		return errors.New("run writer is closed")
+	}
+	return w.err
+}
+
+func (w *runWriter) fail(err error) error {
+	if w.err == nil {
+		w.err = err
+	}
+	return err
 }
 
 func writeRunHeader(writer io.Writer, header runHeader) error {

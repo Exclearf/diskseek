@@ -191,17 +191,23 @@ func TestReadRunPostingRejectsInvalidData(t *testing.T) {
 	}
 }
 
-func TestEmptyRunWriterBytes(t *testing.T) {
+func TestRunWriterBytes(t *testing.T) {
 	output := &bufferWriteCloser{}
-	writer, err := newRunWriter(output, runHeader{})
+	writer, err := newRunWriter(output, runHeader{firstDocumentID: 7, documentCount: 1})
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.writeTerm("go", 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.writePosting(index.Posting{DocumentID: 7, Frequency: 3}); err != nil {
 		t.Fatal(err)
 	}
 	if err := writer.close(); err != nil {
 		t.Fatal(err)
 	}
 
-	const want = "44534b52554e303100000000000000000000000000000000"
+	const want = "44534b52554e303107000000010000000000000002000000676f0100000000000000070000000300000000000000"
 	if got := hex.EncodeToString(output.Bytes()); got != want {
 		t.Fatalf("run bytes = %s, want %s", got, want)
 	}
@@ -219,6 +225,58 @@ func TestRunWriterCloseReportsFlushAndCloseErrors(t *testing.T) {
 	err = writer.close()
 	if !errors.Is(err, writeErr) || !errors.Is(err, closeErr) {
 		t.Fatalf("close() error = %v, want write and close errors", err)
+	}
+}
+
+func TestRunWriterRejectsPostingCountMismatch(t *testing.T) {
+	t.Run("next term before current term is complete", func(t *testing.T) {
+		writer := newTestRunWriter(t, runHeader{documentCount: 2})
+		if err := writer.writeTerm("a", 2); err != nil {
+			t.Fatal(err)
+		}
+		if err := writer.writePosting(index.Posting{Frequency: 1}); err != nil {
+			t.Fatal(err)
+		}
+		if err := writer.writeTerm("b", 1); err == nil {
+			t.Fatal("writeTerm() error = nil")
+		}
+	})
+
+	t.Run("more postings than declared", func(t *testing.T) {
+		writer := newTestRunWriter(t, runHeader{documentCount: 1})
+		if err := writer.writeTerm("a", 1); err != nil {
+			t.Fatal(err)
+		}
+		if err := writer.writePosting(index.Posting{Frequency: 1}); err != nil {
+			t.Fatal(err)
+		}
+		writeErr := writer.writePosting(index.Posting{Frequency: 1})
+		if writeErr == nil {
+			t.Fatal("writePosting() error = nil")
+		}
+		if err := writer.close(); !errors.Is(err, writeErr) {
+			t.Fatalf("close() error = %v, want prior write error", err)
+		}
+	})
+
+	t.Run("fewer postings than declared", func(t *testing.T) {
+		writer := newTestRunWriter(t, runHeader{documentCount: 1})
+		if err := writer.writeTerm("a", 1); err != nil {
+			t.Fatal(err)
+		}
+		if err := writer.close(); err == nil {
+			t.Fatal("close() error = nil")
+		}
+	})
+}
+
+func TestRunWriterRejectsWriteAfterClose(t *testing.T) {
+	writer := newTestRunWriter(t, runHeader{documentCount: 1})
+	if err := writer.close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.writeTerm("a", 1); err == nil {
+		t.Fatal("writeTerm() error = nil")
 	}
 }
 
@@ -242,6 +300,15 @@ func TestRunHeaderDocumentInterval(t *testing.T) {
 			t.Errorf("documentInRun(%d) = %t, want %t", test.documentID, got, test.want)
 		}
 	}
+}
+
+func newTestRunWriter(t *testing.T, header runHeader) *runWriter {
+	t.Helper()
+	writer, err := newRunWriter(&bufferWriteCloser{}, header)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return writer
 }
 
 type bufferWriteCloser struct {
