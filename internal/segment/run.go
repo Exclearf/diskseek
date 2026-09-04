@@ -126,6 +126,9 @@ type runReader struct {
 	reader            *bufio.Reader
 	header            runHeader
 	postingsRemaining uint64
+	lastTerm          string
+	lastDocumentID    index.DocumentID
+	hasLastDocumentID bool
 }
 
 func newRunReader(input io.Reader) (*runReader, error) {
@@ -146,7 +149,12 @@ func (r *runReader) nextTerm() (string, uint64, error) {
 	if err != nil {
 		return "", 0, err
 	}
+	if r.lastTerm != "" && term <= r.lastTerm {
+		return "", 0, errors.New("run terms are not strictly increasing")
+	}
 	r.postingsRemaining = postingCount
+	r.lastTerm = term
+	r.hasLastDocumentID = false
 	return term, postingCount, nil
 }
 
@@ -159,7 +167,12 @@ func (r *runReader) nextPosting() (index.Posting, error) {
 	if err != nil {
 		return index.Posting{}, err
 	}
+	if r.hasLastDocumentID && posting.DocumentID <= r.lastDocumentID {
+		return index.Posting{}, errors.New("run posting document IDs are not strictly increasing")
+	}
 	r.postingsRemaining--
+	r.lastDocumentID = posting.DocumentID
+	r.hasLastDocumentID = true
 	return posting, nil
 }
 

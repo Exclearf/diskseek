@@ -257,6 +257,72 @@ func TestRunReaderRejectsPostingCountMismatch(t *testing.T) {
 	})
 }
 
+func TestRunReaderRejectsOutOfOrderRecords(t *testing.T) {
+	const (
+		secondPostingOffset = runHeaderBytes + 4 + len("a") + 8 + 8
+		secondTermOffset    = secondPostingOffset + 8
+	)
+
+	t.Run("terms", func(t *testing.T) {
+		data := encodeTwoTermRun(t)
+		data[secondTermOffset+4] = 'a'
+		reader, err := newRunReader(bytes.NewReader(data))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := reader.nextTerm(); err != nil {
+			t.Fatal(err)
+		}
+		for range 2 {
+			if _, err := reader.nextPosting(); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if _, _, err := reader.nextTerm(); err == nil {
+			t.Fatal("nextTerm() error = nil")
+		}
+	})
+
+	t.Run("postings", func(t *testing.T) {
+		data := encodeTwoTermRun(t)
+		binary.LittleEndian.PutUint32(data[secondPostingOffset:secondPostingOffset+4], 7)
+		reader, err := newRunReader(bytes.NewReader(data))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := reader.nextTerm(); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := reader.nextPosting(); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := reader.nextPosting(); err == nil {
+			t.Fatal("nextPosting() error = nil")
+		}
+	})
+}
+
+func TestRunReaderResetsDocumentOrderForEachTerm(t *testing.T) {
+	reader, err := newRunReader(bytes.NewReader(encodeTwoTermRun(t)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := reader.nextTerm(); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if _, err := reader.nextPosting(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, _, err := reader.nextTerm(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reader.nextPosting(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestRunWriterCloseReportsFlushAndCloseErrors(t *testing.T) {
 	writeErr := errors.New("write failed")
 	closeErr := errors.New("close failed")
@@ -409,6 +475,33 @@ func encodeOneTermRun(t *testing.T) []byte {
 		t.Fatal(err)
 	}
 	if err := writer.writePosting(index.Posting{DocumentID: 7, Frequency: 3}); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.close(); err != nil {
+		t.Fatal(err)
+	}
+	return output.Bytes()
+}
+
+func encodeTwoTermRun(t *testing.T) []byte {
+	t.Helper()
+	output := &bufferWriteCloser{}
+	writer, err := newRunWriter(output, runHeader{firstDocumentID: 7, documentCount: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.writeTerm("a", 2); err != nil {
+		t.Fatal(err)
+	}
+	for _, documentID := range []index.DocumentID{7, 8} {
+		if err := writer.writePosting(index.Posting{DocumentID: documentID, Frequency: 1}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := writer.writeTerm("b", 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.writePosting(index.Posting{DocumentID: 7, Frequency: 1}); err != nil {
 		t.Fatal(err)
 	}
 	if err := writer.close(); err != nil {
