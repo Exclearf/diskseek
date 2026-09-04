@@ -2,6 +2,7 @@ package segment
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"testing"
@@ -29,7 +30,7 @@ func TestMergeRunGroup(t *testing.T) {
 	}
 
 	output := &bufferWriteCloser{}
-	if err := mergeRunGroup(inputs, output); err != nil {
+	if err := mergeRunGroup(context.Background(), inputs, output); err != nil {
 		t.Fatal(err)
 	}
 
@@ -65,7 +66,7 @@ func TestMergeRunGroupStreamsHotTerm(t *testing.T) {
 			inputs[runOrdinal] = &mergeFlowReader{Reader: input, flow: flow}
 		}
 
-		if err := mergeRunGroup(inputs, flow); err != nil {
+		if err := mergeRunGroup(context.Background(), inputs, flow); err != nil {
 			t.Fatal(err)
 		}
 
@@ -78,6 +79,27 @@ func TestMergeRunGroupStreamsHotTerm(t *testing.T) {
 			t.Fatalf("%d postings: maximum read-ahead = %d bytes, want at most %d", totalPostings, flow.maxReadAheadBytes, accountedBufferBytes)
 		}
 		t.Logf("postings=%d, fixed buffers=%d bytes, maximum read-ahead=%d bytes", totalPostings, accountedBufferBytes, flow.maxReadAheadBytes)
+	}
+}
+
+func TestMergeRunGroupStopsDuringHotTermWhenCanceled(t *testing.T) {
+	const documentsPerRun = 1 << 14
+	inputs := []io.Reader{
+		bytes.NewReader(encodeHotTermRun(t, 0, documentsPerRun)),
+		bytes.NewReader(encodeHotTermRun(t, documentsPerRun, documentsPerRun)),
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	output := &cancelingWriteCloser{cancel: cancel}
+
+	err := mergeRunGroup(ctx, inputs, output)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("mergeRunGroup() error = %v, want %v", err, context.Canceled)
+	}
+	if !output.closed {
+		t.Fatal("merge output was not closed")
+	}
+	if output.Len() > 2*runBufferBytes {
+		t.Fatalf("output bytes after cancellation = %d, want at most %d", output.Len(), 2*runBufferBytes)
 	}
 }
 
@@ -98,7 +120,7 @@ func TestMergeRunGroupRejectsInvalidGroup(t *testing.T) {
 			for i, header := range test.headers {
 				inputs[i] = bytes.NewReader(encodeMergeTestRun(t, header, nil))
 			}
-			if err := mergeRunGroup(inputs, &bufferWriteCloser{}); err == nil {
+			if err := mergeRunGroup(context.Background(), inputs, &bufferWriteCloser{}); err == nil {
 				t.Fatal("mergeRunGroup() error = nil")
 			}
 		})
@@ -111,7 +133,7 @@ func TestMergeRunGroupPreservesNonzeroDocumentStart(t *testing.T) {
 		bytes.NewReader(encodeMergeTestRun(t, runHeader{firstDocumentID: 8, documentCount: 1}, nil)),
 	}
 	output := &bufferWriteCloser{}
-	if err := mergeRunGroup(inputs, output); err != nil {
+	if err := mergeRunGroup(context.Background(), inputs, output); err != nil {
 		t.Fatal(err)
 	}
 
@@ -131,7 +153,7 @@ func TestMergeRunGroupReadsInputsToCleanEnd(t *testing.T) {
 	})
 
 	inputs := []io.Reader{bytes.NewReader(corrupt), bytes.NewReader(valid)}
-	if err := mergeRunGroup(inputs, &bufferWriteCloser{}); err == nil {
+	if err := mergeRunGroup(context.Background(), inputs, &bufferWriteCloser{}); err == nil {
 		t.Fatal("mergeRunGroup() error = nil")
 	}
 }
@@ -159,7 +181,7 @@ func TestMergeRunGroupReportsInputErrors(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			output := &mergeCloseErrorBuffer{closeErr: closeErr}
-			err := mergeRunGroup([]io.Reader{test.input, bytes.NewReader(secondRun)}, output)
+			err := mergeRunGroup(context.Background(), []io.Reader{test.input, bytes.NewReader(secondRun)}, output)
 			if !errors.Is(err, readErr) || !errors.Is(err, closeErr) {
 				t.Fatalf("mergeRunGroup() error = %v, want read and close errors", err)
 			}
@@ -175,7 +197,7 @@ func TestMergeRunGroupReportsOutputErrors(t *testing.T) {
 	writeErr := errors.New("write output")
 	closeErr := errors.New("close output")
 	output := &failingWriteCloser{writeErr: writeErr, closeErr: closeErr}
-	if err := mergeRunGroup(inputs, output); !errors.Is(err, writeErr) || !errors.Is(err, closeErr) {
+	if err := mergeRunGroup(context.Background(), inputs, output); !errors.Is(err, writeErr) || !errors.Is(err, closeErr) {
 		t.Fatalf("mergeRunGroup() error = %v, want write and close errors", err)
 	}
 }
@@ -266,6 +288,22 @@ func (r *mergeFlowReader) Read(buffer []byte) (int, error) {
 type mergeCloseErrorBuffer struct {
 	bytes.Buffer
 	closeErr error
+}
+
+type cancelingWriteCloser struct {
+	bytes.Buffer
+	cancel context.CancelFunc
+	closed bool
+}
+
+func (w *cancelingWriteCloser) Write(buffer []byte) (int, error) {
+	w.cancel()
+	return w.Buffer.Write(buffer)
+}
+
+func (w *cancelingWriteCloser) Close() error {
+	w.closed = true
+	return nil
 }
 
 func (b *mergeCloseErrorBuffer) Close() error {

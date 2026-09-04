@@ -12,11 +12,12 @@ import (
 )
 
 const (
-	runMagic        = "DSKRUN01"
-	runHeaderBytes  = 20
-	runBufferBytes  = 32 << 10
-	maxRunTermBytes = 1 << 20
-	documentIDLimit = uint64(1) << 32
+	runMagic            = "DSKRUN01"
+	runHeaderBytes      = 20
+	runBufferBytes      = 32 << 10
+	encodedPostingBytes = 8
+	maxRunTermBytes     = 1 << 20
+	documentIDLimit     = uint64(1) << 32
 )
 
 type runHeader struct {
@@ -285,7 +286,7 @@ func writeRunPosting(writer io.Writer, run runHeader, posting index.Posting) err
 		return errors.New("run posting document ID is outside the run")
 	}
 
-	var encoded [8]byte
+	var encoded [encodedPostingBytes]byte
 	binary.LittleEndian.PutUint32(encoded[0:4], uint32(posting.DocumentID))
 	binary.LittleEndian.PutUint32(encoded[4:8], posting.Frequency)
 	if _, err := writer.Write(encoded[:]); err != nil {
@@ -295,7 +296,7 @@ func writeRunPosting(writer io.Writer, run runHeader, posting index.Posting) err
 }
 
 func readRunPosting(reader io.Reader, run runHeader) (index.Posting, error) {
-	var encoded [8]byte
+	var encoded [encodedPostingBytes]byte
 	if _, err := io.ReadFull(reader, encoded[:]); err != nil {
 		return index.Posting{}, fmt.Errorf("read run posting: %w", err)
 	}

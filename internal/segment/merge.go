@@ -2,10 +2,13 @@ package segment
 
 import (
 	"container/heap"
+	"context"
 	"errors"
 	"fmt"
 	"io"
 )
+
+const postingsPerCancellationCheck = runBufferBytes / encodedPostingBytes
 
 type mergeTerm struct {
 	term         string
@@ -39,7 +42,10 @@ func (h *mergeTermHeap) Pop() any {
 	return value
 }
 
-func mergeRunGroup(inputs []io.Reader, output io.WriteCloser) error {
+func mergeRunGroup(ctx context.Context, inputs []io.Reader, output io.WriteCloser) error {
+	if err := ctx.Err(); err != nil {
+		return errors.Join(err, output.Close())
+	}
 	if len(inputs) < 2 {
 		return errors.Join(errors.New("merge group must contain at least two runs"), output.Close())
 	}
@@ -47,6 +53,9 @@ func mergeRunGroup(inputs []io.Reader, output io.WriteCloser) error {
 	readers := make([]*runReader, len(inputs))
 	var nextDocumentID uint64
 	for runOrdinal, source := range inputs {
+		if err := ctx.Err(); err != nil {
+			return errors.Join(err, output.Close())
+		}
 		reader, err := newRunReader(source)
 		if err != nil {
 			return errors.Join(fmt.Errorf("read run %d header: %w", runOrdinal, err), output.Close())
@@ -62,6 +71,9 @@ func mergeRunGroup(inputs []io.Reader, output io.WriteCloser) error {
 		nextDocumentID = start + reader.header.documentCount
 		readers[runOrdinal] = reader
 	}
+	if err := ctx.Err(); err != nil {
+		return errors.Join(err, output.Close())
+	}
 
 	firstDocumentID := readers[0].header.firstDocumentID
 	writer, err := newRunWriter(output, runHeader{
@@ -74,6 +86,9 @@ func mergeRunGroup(inputs []io.Reader, output io.WriteCloser) error {
 
 	terms := make(mergeTermHeap, 0, len(readers))
 	for runOrdinal, reader := range readers {
+		if err := ctx.Err(); err != nil {
+			return errors.Join(err, writer.close())
+		}
 		term, postingCount, err := reader.nextTerm()
 		if errors.Is(err, io.EOF) {
 			continue
@@ -90,7 +105,11 @@ func mergeRunGroup(inputs []io.Reader, output io.WriteCloser) error {
 	heap.Init(&terms)
 
 	contributingRuns := make([]int, 0, len(readers))
+	postingsUntilCancellationCheck := 0
 	for terms.Len() != 0 {
+		if err := ctx.Err(); err != nil {
+			return errors.Join(err, writer.close())
+		}
 		contributingRuns = contributingRuns[:0]
 		term := terms[0].term
 		var postingCount uint64
@@ -107,6 +126,14 @@ func mergeRunGroup(inputs []io.Reader, output io.WriteCloser) error {
 			reader := readers[runOrdinal]
 			runPostingCount := reader.postingsRemaining
 			for range runPostingCount {
+				if postingsUntilCancellationCheck == 0 {
+					if err := ctx.Err(); err != nil {
+						return errors.Join(err, writer.close())
+					}
+					postingsUntilCancellationCheck = postingsPerCancellationCheck
+				}
+				postingsUntilCancellationCheck--
+
 				posting, err := reader.nextPosting()
 				if err != nil {
 					return errors.Join(fmt.Errorf("read %q posting from run %d: %w", term, runOrdinal, err), writer.close())
@@ -116,6 +143,9 @@ func mergeRunGroup(inputs []io.Reader, output io.WriteCloser) error {
 				}
 			}
 
+			if err := ctx.Err(); err != nil {
+				return errors.Join(err, writer.close())
+			}
 			nextTerm, nextPostingCount, err := reader.nextTerm()
 			if errors.Is(err, io.EOF) {
 				continue
@@ -131,5 +161,8 @@ func mergeRunGroup(inputs []io.Reader, output io.WriteCloser) error {
 		}
 	}
 
+	if err := ctx.Err(); err != nil {
+		return errors.Join(err, writer.close())
+	}
 	return writer.close()
 }

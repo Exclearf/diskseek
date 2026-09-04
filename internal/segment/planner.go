@@ -164,6 +164,9 @@ func mergeFileGroup(
 
 	inputs := make([]io.Reader, 0, len(group.inputPaths))
 	for _, path := range group.inputPaths {
+		if err := ctx.Err(); err != nil {
+			return "", 0, 0, err
+		}
 		input, err := os.Open(path)
 		if err != nil {
 			return "", 0, 0, fmt.Errorf("open input run: %w", err)
@@ -177,13 +180,16 @@ func mergeFileGroup(
 		}
 		inputBytes += uint64(info.Size())
 	}
+	if err := ctx.Err(); err != nil {
+		return "", 0, 0, err
+	}
 
 	output, err := os.CreateTemp(directory, fmt.Sprintf("merge-%d-%d-*", passIndex, group.groupIndex))
 	if err != nil {
 		return "", 0, 0, fmt.Errorf("create successor run: %w", err)
 	}
 	ownedOutputPath = output.Name()
-	if err := mergeRunGroup(inputs, output); err != nil {
+	if err := mergeRunGroup(ctx, inputs, output); err != nil {
 		return "", 0, 0, err
 	}
 
