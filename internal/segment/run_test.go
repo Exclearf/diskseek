@@ -2,7 +2,9 @@ package segment
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/hex"
+	"errors"
 	"io"
 	"strings"
 	"testing"
@@ -49,15 +51,24 @@ func TestReadRunHeaderRejectsInvalidData(t *testing.T) {
 	}
 }
 
-func TestWriteRunTermHeader(t *testing.T) {
+func TestRunTermHeaderRoundTripAndBytes(t *testing.T) {
 	var output bytes.Buffer
-	if err := writeRunTermHeader(&output, runHeader{documentCount: documentIDLimit}, "go", documentIDLimit); err != nil {
+	header := runHeader{documentCount: documentIDLimit}
+	if err := writeRunTermHeader(&output, header, "go", documentIDLimit); err != nil {
 		t.Fatal(err)
 	}
 
 	const want = "02000000676f0000000001000000"
 	if got := hex.EncodeToString(output.Bytes()); got != want {
 		t.Fatalf("term bytes = %s, want %s", got, want)
+	}
+
+	term, postingCount, err := readRunTermHeader(bytes.NewReader(output.Bytes()), header)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if term != "go" || postingCount != documentIDLimit {
+		t.Fatalf("readRunTermHeader() = %q, %d; want %q, %d", term, postingCount, "go", documentIDLimit)
 	}
 }
 
@@ -81,6 +92,46 @@ func TestWriteRunTermHeaderRejectsInvalidValues(t *testing.T) {
 				t.Fatal("writeRunTermHeader() error = nil")
 			}
 		})
+	}
+}
+
+func TestReadRunTermHeaderRejectsInvalidData(t *testing.T) {
+	var oversized [4]byte
+	binary.LittleEndian.PutUint32(oversized[:], maxRunTermBytes+1)
+	tests := []struct {
+		name string
+		data []byte
+	}{
+		{name: "oversized term", data: oversized[:]},
+		{name: "truncated term", data: []byte{2, 0, 0, 0, 'g'}},
+		{name: "invalid UTF-8", data: []byte{1, 0, 0, 0, 0xff}},
+		{name: "truncated posting count", data: []byte{1, 0, 0, 0, 'a'}},
+		{name: "zero posting count", data: append([]byte{1, 0, 0, 0, 'a'}, make([]byte, 8)...)},
+		{name: "posting count above document count", data: append([]byte{1, 0, 0, 0, 'a', 2}, make([]byte, 7)...)},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if _, _, err := readRunTermHeader(bytes.NewReader(test.data), runHeader{documentCount: 1}); err == nil {
+				t.Fatal("readRunTermHeader() error = nil")
+			}
+		})
+	}
+}
+
+func TestReadRunTermHeaderEndMarker(t *testing.T) {
+	if _, _, err := readRunTermHeader(bytes.NewReader(make([]byte, 4)), runHeader{}); !errors.Is(err, io.EOF) {
+		t.Fatalf("readRunTermHeader(end marker) error = %v, want EOF", err)
+	}
+
+	invalid := [][]byte{
+		nil,
+		{0, 0, 0, 0, 1},
+	}
+	for _, data := range invalid {
+		if _, _, err := readRunTermHeader(bytes.NewReader(data), runHeader{}); err == nil || errors.Is(err, io.EOF) {
+			t.Fatalf("readRunTermHeader(%v) error = %v, want non-EOF error", data, err)
+		}
 	}
 }
 

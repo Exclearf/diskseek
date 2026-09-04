@@ -81,6 +81,48 @@ func writeRunTermHeader(writer io.Writer, run runHeader, term string, postingCou
 	return nil
 }
 
+func readRunTermHeader(reader io.Reader, run runHeader) (string, uint64, error) {
+	var encodedLength [4]byte
+	if _, err := io.ReadFull(reader, encodedLength[:]); err != nil {
+		if errors.Is(err, io.EOF) {
+			err = io.ErrUnexpectedEOF
+		}
+		return "", 0, fmt.Errorf("read run term length: %w", err)
+	}
+
+	termLength := binary.LittleEndian.Uint32(encodedLength[:])
+	if termLength == 0 {
+		var trailing [1]byte
+		if _, err := io.ReadFull(reader, trailing[:]); errors.Is(err, io.EOF) {
+			return "", 0, io.EOF
+		} else if err != nil {
+			return "", 0, fmt.Errorf("check run end: %w", err)
+		}
+		return "", 0, errors.New("run has trailing bytes")
+	}
+	if termLength > maxRunTermBytes {
+		return "", 0, errors.New("invalid run term length")
+	}
+
+	termBytes := make([]byte, int(termLength))
+	if _, err := io.ReadFull(reader, termBytes); err != nil {
+		return "", 0, fmt.Errorf("read run term: %w", err)
+	}
+	if !utf8.Valid(termBytes) {
+		return "", 0, errors.New("run term is not valid UTF-8")
+	}
+
+	var encodedCount [8]byte
+	if _, err := io.ReadFull(reader, encodedCount[:]); err != nil {
+		return "", 0, fmt.Errorf("read run posting count: %w", err)
+	}
+	postingCount := binary.LittleEndian.Uint64(encodedCount[:])
+	if postingCount == 0 || postingCount > run.documentCount {
+		return "", 0, errors.New("invalid run posting count")
+	}
+	return string(termBytes), postingCount, nil
+}
+
 func validateRunHeader(header runHeader) error {
 	if header.documentCount == 0 {
 		if header.firstDocumentID != 0 {
