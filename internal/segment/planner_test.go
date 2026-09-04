@@ -2,6 +2,7 @@ package segment
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -75,6 +76,14 @@ func TestMergeRunPass(t *testing.T) {
 	}
 	if gotPaths[1] != paths[3] {
 		t.Fatalf("carried path = %q, want %q", gotPaths[1], paths[3])
+	}
+	for _, path := range paths[:3] {
+		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("stat merged source %q: %v, want not exist", path, err)
+		}
+	}
+	if _, err := os.Stat(paths[3]); err != nil {
+		t.Fatalf("stat carried source %q: %v", paths[3], err)
 	}
 
 	wantStats := []mergeGroupStats{
@@ -183,8 +192,6 @@ func TestMergeRunsProducesSameBytesAcrossFanIn(t *testing.T) {
 			postings: []index.Posting{posting},
 		}})
 	}
-	paths := writeMergeTestRuns(t, t.TempDir(), runs)
-
 	want := encodeMergeTestRun(t, runHeader{documentCount: runCount}, []mergeTestTerm{
 		{term: "shared", postings: postings},
 	})
@@ -200,6 +207,7 @@ func TestMergeRunsProducesSameBytesAcrossFanIn(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			paths := writeMergeTestRuns(t, t.TempDir(), runs)
 			path, stats, err := mergeRuns(t.TempDir(), paths, test.fanIn)
 			if err != nil {
 				t.Fatal(err)

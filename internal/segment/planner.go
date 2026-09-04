@@ -99,6 +99,16 @@ func mergeRunPass(
 			outputBytes: outputBytes,
 		}
 	}
+	for _, group := range groups {
+		if len(group.inputPaths) == 1 {
+			continue
+		}
+		for _, path := range group.inputPaths {
+			if err := os.Remove(path); err != nil {
+				return nil, nil, fmt.Errorf("remove merged source: %w", err)
+			}
+		}
+	}
 	return successors, stats, nil
 }
 
