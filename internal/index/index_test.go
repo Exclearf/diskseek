@@ -39,7 +39,8 @@ func TestBuild(t *testing.T) {
 			"small":   {{DocumentID: 1, Frequency: 1}},
 			"strasse": {{DocumentID: 3, Frequency: 1}},
 		},
-		TotalLength: 12,
+		DocumentsWithTerms: 4,
+		TotalLength:        12,
 	}
 
 	if !reflect.DeepEqual(got, want) {

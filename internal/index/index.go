@@ -20,9 +20,10 @@ type Posting struct {
 }
 
 type Index struct {
-	Documents   []DocumentMeta
-	Postings    map[string][]Posting
-	TotalLength uint64
+	Documents          []DocumentMeta
+	Postings           map[string][]Posting
+	DocumentsWithTerms uint64
+	TotalLength        uint64
 }
 
 func Build(records *corpus.TSVReader) (Index, error) {
@@ -48,6 +49,9 @@ func Build(records *corpus.TSVReader) (Index, error) {
 			ExternalID: record.ExternalID,
 			Length:     length,
 		})
+		if length > 0 {
+			result.DocumentsWithTerms++
+		}
 		result.TotalLength += uint64(length)
 
 		frequencies := make(map[string]uint32)
