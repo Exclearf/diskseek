@@ -98,6 +98,36 @@ func TestMergeRunPass(t *testing.T) {
 	}
 }
 
+func TestMergeRunPassRemovesFailedSuccessor(t *testing.T) {
+	directory := t.TempDir()
+	runs := [][]byte{
+		encodeMergeTestRun(t, runHeader{documentCount: 1}, []mergeTestTerm{
+			{term: "apple", postings: []index.Posting{{DocumentID: 0, Frequency: 1}}},
+		}),
+		encodeMergeTestRun(t, runHeader{firstDocumentID: 1, documentCount: 1}, []mergeTestTerm{
+			{term: "banana", postings: []index.Posting{{DocumentID: 1, Frequency: 1}}},
+		}),
+	}
+	runs[1] = append(runs[1], 0)
+	paths := writeMergeTestRuns(t, directory, runs)
+
+	if _, _, err := mergeRunPass(directory, paths, 2, 0); err == nil {
+		t.Fatal("mergeRunPass() error = nil")
+	}
+	for _, path := range paths {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("stat source %q: %v", path, err)
+		}
+	}
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != len(paths) {
+		t.Fatalf("directory entries = %d, want %d source runs", len(entries), len(paths))
+	}
+}
+
 func TestMergeRunsProducesSameBytesAcrossFanIn(t *testing.T) {
 	const runCount = 10
 	runs := make([][]byte, runCount)

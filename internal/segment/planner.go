@@ -113,9 +113,13 @@ func mergeFileGroup(
 	}
 
 	inputFiles := make([]*os.File, 0, len(group.inputPaths))
+	var ownedOutputPath string
 	defer func() {
 		for _, input := range inputFiles {
 			err = errors.Join(err, input.Close())
+		}
+		if err != nil && ownedOutputPath != "" {
+			err = errors.Join(err, os.Remove(ownedOutputPath))
 		}
 	}()
 
@@ -139,16 +143,16 @@ func mergeFileGroup(
 	if err != nil {
 		return "", 0, 0, fmt.Errorf("create successor run: %w", err)
 	}
-	outputPath = output.Name()
+	ownedOutputPath = output.Name()
 	if err := mergeRunGroup(inputs, output); err != nil {
 		return "", 0, 0, err
 	}
 
-	info, err := os.Stat(outputPath)
+	info, err := os.Stat(ownedOutputPath)
 	if err != nil {
 		return "", 0, 0, fmt.Errorf("stat successor run: %w", err)
 	}
-	return outputPath, inputBytes, uint64(info.Size()), nil
+	return ownedOutputPath, inputBytes, uint64(info.Size()), nil
 }
 
 func createEmptyRun(directory string) (string, error) {
