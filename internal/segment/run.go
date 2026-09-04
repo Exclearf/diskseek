@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"unicode/utf8"
 
 	"github.com/Exclearf/diskseek/internal/index"
 )
@@ -12,6 +13,7 @@ import (
 const (
 	runMagic        = "DSKRUN01"
 	runHeaderBytes  = 20
+	maxRunTermBytes = 1 << 20
 	documentIDLimit = uint64(1) << 32
 )
 
@@ -52,6 +54,31 @@ func readRunHeader(reader io.Reader) (runHeader, error) {
 		return runHeader{}, err
 	}
 	return header, nil
+}
+
+func writeRunTermHeader(writer io.Writer, run runHeader, term string, postingCount uint64) error {
+	if len(term) == 0 || len(term) > maxRunTermBytes || !utf8.ValidString(term) {
+		return errors.New("invalid run term")
+	}
+	if postingCount == 0 || postingCount > run.documentCount {
+		return errors.New("invalid run posting count")
+	}
+
+	var termLength [4]byte
+	binary.LittleEndian.PutUint32(termLength[:], uint32(len(term)))
+	if _, err := writer.Write(termLength[:]); err != nil {
+		return fmt.Errorf("write run term length: %w", err)
+	}
+	if _, err := io.WriteString(writer, term); err != nil {
+		return fmt.Errorf("write run term: %w", err)
+	}
+
+	var encodedCount [8]byte
+	binary.LittleEndian.PutUint64(encodedCount[:], postingCount)
+	if _, err := writer.Write(encodedCount[:]); err != nil {
+		return fmt.Errorf("write run posting count: %w", err)
+	}
+	return nil
 }
 
 func validateRunHeader(header runHeader) error {
