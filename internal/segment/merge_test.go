@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"testing"
+	"testing/iotest"
 
 	"github.com/Exclearf/diskseek/internal/index"
 )
@@ -135,15 +136,47 @@ func TestMergeRunGroupReadsInputsToCleanEnd(t *testing.T) {
 	}
 }
 
-func TestMergeRunGroupReportsOutputCloseError(t *testing.T) {
+func TestMergeRunGroupReportsInputErrors(t *testing.T) {
+	readErr := errors.New("read input")
+	closeErr := errors.New("close output")
+	hotRun := encodeHotTermRun(t, 0, 2)
+	secondRun := encodeMergeTestRun(t, runHeader{firstDocumentID: 2, documentCount: 1}, nil)
+	const firstPostingEnd = runHeaderBytes + 4 + len("hot") + 8 + 8
+	tests := []struct {
+		name  string
+		input io.Reader
+	}{
+		{name: "run header", input: iotest.ErrReader(readErr)},
+		{
+			name: "hot term postings",
+			input: io.MultiReader(
+				io.LimitReader(bytes.NewReader(hotRun), int64(firstPostingEnd)),
+				iotest.ErrReader(readErr),
+			),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			output := &mergeCloseErrorBuffer{closeErr: closeErr}
+			err := mergeRunGroup([]io.Reader{test.input, bytes.NewReader(secondRun)}, output)
+			if !errors.Is(err, readErr) || !errors.Is(err, closeErr) {
+				t.Fatalf("mergeRunGroup() error = %v, want read and close errors", err)
+			}
+		})
+	}
+}
+
+func TestMergeRunGroupReportsOutputErrors(t *testing.T) {
 	inputs := []io.Reader{
 		bytes.NewReader(encodeMergeTestRun(t, runHeader{documentCount: 1}, nil)),
 		bytes.NewReader(encodeMergeTestRun(t, runHeader{firstDocumentID: 1, documentCount: 1}, nil)),
 	}
+	writeErr := errors.New("write output")
 	closeErr := errors.New("close output")
-	output := &mergeCloseErrorBuffer{closeErr: closeErr}
-	if err := mergeRunGroup(inputs, output); !errors.Is(err, closeErr) {
-		t.Fatalf("mergeRunGroup() error = %v, want %v", err, closeErr)
+	output := &failingWriteCloser{writeErr: writeErr, closeErr: closeErr}
+	if err := mergeRunGroup(inputs, output); !errors.Is(err, writeErr) || !errors.Is(err, closeErr) {
+		t.Fatalf("mergeRunGroup() error = %v, want write and close errors", err)
 	}
 }
 
