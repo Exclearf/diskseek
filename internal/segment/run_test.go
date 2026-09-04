@@ -270,6 +270,49 @@ func TestRunWriterRejectsPostingCountMismatch(t *testing.T) {
 	})
 }
 
+func TestRunWriterRejectsOutOfOrderRecords(t *testing.T) {
+	t.Run("terms", func(t *testing.T) {
+		writer := newTestRunWriter(t, runHeader{documentCount: 1})
+		if err := writer.writeTerm("b", 1); err != nil {
+			t.Fatal(err)
+		}
+		if err := writer.writePosting(index.Posting{Frequency: 1}); err != nil {
+			t.Fatal(err)
+		}
+		if err := writer.writeTerm("a", 1); err == nil {
+			t.Fatal("writeTerm() error = nil")
+		}
+	})
+
+	t.Run("postings", func(t *testing.T) {
+		writer := newTestRunWriter(t, runHeader{firstDocumentID: 7, documentCount: 2})
+		if err := writer.writeTerm("a", 2); err != nil {
+			t.Fatal(err)
+		}
+		if err := writer.writePosting(index.Posting{DocumentID: 7, Frequency: 1}); err != nil {
+			t.Fatal(err)
+		}
+		if err := writer.writePosting(index.Posting{DocumentID: 7, Frequency: 1}); err == nil {
+			t.Fatal("writePosting() error = nil")
+		}
+	})
+}
+
+func TestRunWriterResetsDocumentOrderForEachTerm(t *testing.T) {
+	writer := newTestRunWriter(t, runHeader{firstDocumentID: 7, documentCount: 1})
+	for _, term := range []string{"a", "b"} {
+		if err := writer.writeTerm(term, 1); err != nil {
+			t.Fatal(err)
+		}
+		if err := writer.writePosting(index.Posting{DocumentID: 7, Frequency: 1}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := writer.close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestRunWriterRejectsWriteAfterClose(t *testing.T) {
 	writer := newTestRunWriter(t, runHeader{documentCount: 1})
 	if err := writer.close(); err != nil {

@@ -29,6 +29,9 @@ type runWriter struct {
 	writer            *bufio.Writer
 	header            runHeader
 	postingsRemaining uint64
+	lastTerm          string
+	lastDocumentID    index.DocumentID
+	hasLastDocumentID bool
 	err               error
 	closed            bool
 }
@@ -52,11 +55,16 @@ func (w *runWriter) writeTerm(term string, postingCount uint64) error {
 	if w.postingsRemaining != 0 {
 		return w.fail(errors.New("previous run term has unwritten postings"))
 	}
+	if w.lastTerm != "" && term <= w.lastTerm {
+		return w.fail(errors.New("run terms are not strictly increasing"))
+	}
 	if err := writeRunTermHeader(w.writer, w.header, term, postingCount); err != nil {
 		return w.fail(err)
 	}
 
 	w.postingsRemaining = postingCount
+	w.lastTerm = term
+	w.hasLastDocumentID = false
 	return nil
 }
 
@@ -67,11 +75,16 @@ func (w *runWriter) writePosting(posting index.Posting) error {
 	if w.postingsRemaining == 0 {
 		return w.fail(errors.New("run posting has no active term"))
 	}
+	if w.hasLastDocumentID && posting.DocumentID <= w.lastDocumentID {
+		return w.fail(errors.New("run posting document IDs are not strictly increasing"))
+	}
 	if err := writeRunPosting(w.writer, w.header, posting); err != nil {
 		return w.fail(err)
 	}
 
 	w.postingsRemaining--
+	w.lastDocumentID = posting.DocumentID
+	w.hasLastDocumentID = true
 	return nil
 }
 
