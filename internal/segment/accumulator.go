@@ -1,6 +1,11 @@
 package segment
 
-import "github.com/Exclearf/diskseek/internal/index"
+import (
+	"io"
+	"slices"
+
+	"github.com/Exclearf/diskseek/internal/index"
+)
 
 const segmentBufferBytes uint64 = 2 * runBufferBytes
 
@@ -45,4 +50,33 @@ func (s *segmentState) addDocument(tokens []string) uint64 {
 	s.documentCount++
 	s.retainedBytes += newRetainedBytes
 	return segmentBufferBytes + s.retainedBytes + documentBytes
+}
+
+func (s *segmentState) writeRun(output io.WriteCloser) error {
+	writer, err := newRunWriter(output, runHeader{
+		firstDocumentID: s.firstDocumentID,
+		documentCount:   s.documentCount,
+	})
+	if err != nil {
+		return err
+	}
+
+	terms := make([]string, 0, len(s.postings))
+	for term := range s.postings {
+		terms = append(terms, term)
+	}
+	slices.Sort(terms)
+
+	for _, term := range terms {
+		postings := s.postings[term]
+		if err := writer.writeTerm(term, uint64(len(postings))); err != nil {
+			return writer.close()
+		}
+		for _, posting := range postings {
+			if err := writer.writePosting(posting); err != nil {
+				return writer.close()
+			}
+		}
+	}
+	return writer.close()
 }
