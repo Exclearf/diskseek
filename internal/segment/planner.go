@@ -36,9 +36,12 @@ func planMergePass(paths []string, fanIn int) ([]mergeGroup, error) {
 	return groups, nil
 }
 
-func mergeRuns(directory string, paths []string, fanIn int) (string, []mergeGroupStats, error) {
+func mergeRuns(directory string, paths []string, fanIn, workers int) (string, []mergeGroupStats, error) {
 	if fanIn < 2 {
 		return "", nil, errors.New("merge fan-in must be at least two")
+	}
+	if workers < 1 {
+		return "", nil, errors.New("merge worker count must be positive")
 	}
 
 	switch len(paths) {
@@ -58,7 +61,7 @@ func mergeRuns(directory string, paths []string, fanIn int) (string, []mergeGrou
 	currentPaths := paths
 	var stats []mergeGroupStats
 	for passIndex := 0; len(currentPaths) > 1; passIndex++ {
-		successors, passStats, err := mergeRunPass(directory, currentPaths, fanIn, passIndex)
+		successors, passStats, err := mergeRunPass(directory, currentPaths, fanIn, workers, passIndex)
 		if err != nil {
 			return "", nil, err
 		}
@@ -72,6 +75,7 @@ func mergeRunPass(
 	directory string,
 	paths []string,
 	fanIn int,
+	workers int,
 	passIndex int,
 ) ([]string, []mergeGroupStats, error) {
 	groups, err := planMergePass(paths, fanIn)
@@ -79,24 +83,36 @@ func mergeRunPass(
 		return nil, nil, err
 	}
 
+	results := runMergeGroups(groups, workers, func(group mergeGroup) (string, uint64, uint64, error) {
+		return mergeFileGroup(directory, passIndex, group)
+	})
+
+	var mergeErr error
+	for _, result := range results {
+		if result.err != nil {
+			mergeErr = errors.Join(mergeErr, fmt.Errorf("merge pass %d group %d: %w", passIndex, result.groupIndex, result.err))
+		}
+	}
+	if mergeErr != nil {
+		for _, result := range results {
+			if result.err != nil || result.outputPath == "" || len(groups[result.groupIndex].inputPaths) == 1 {
+				continue
+			}
+			mergeErr = errors.Join(mergeErr, os.Remove(result.outputPath))
+		}
+		return nil, nil, mergeErr
+	}
+
 	successors := make([]string, len(groups))
 	stats := make([]mergeGroupStats, len(groups))
-	for _, group := range groups {
-		path, inputBytes, outputBytes, err := mergeFileGroup(directory, passIndex, group)
-		if err != nil {
-			mergeErr := fmt.Errorf("merge pass %d group %d: %w", passIndex, group.groupIndex, err)
-			for _, successor := range successors[:group.groupIndex] {
-				mergeErr = errors.Join(mergeErr, os.Remove(successor))
-			}
-			return nil, nil, mergeErr
-		}
-		successors[group.groupIndex] = path
-		stats[group.groupIndex] = mergeGroupStats{
+	for _, result := range results {
+		successors[result.groupIndex] = result.outputPath
+		stats[result.groupIndex] = mergeGroupStats{
 			passIndex:   passIndex,
-			groupIndex:  group.groupIndex,
-			inputCount:  len(group.inputPaths),
-			inputBytes:  inputBytes,
-			outputBytes: outputBytes,
+			groupIndex:  result.groupIndex,
+			inputCount:  len(groups[result.groupIndex].inputPaths),
+			inputBytes:  result.inputBytes,
+			outputBytes: result.outputBytes,
 		}
 	}
 	for _, group := range groups {

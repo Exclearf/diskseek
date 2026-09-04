@@ -55,7 +55,7 @@ func TestMergeRunPass(t *testing.T) {
 
 	paths := writeMergeTestRuns(t, directory, runs)
 
-	gotPaths, gotStats, err := mergeRunPass(directory, paths, 3, 0)
+	gotPaths, gotStats, err := mergeRunPass(directory, paths, 3, 1, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +115,7 @@ func TestMergeRunPassPreservesSourcesWhenOutputCreationFails(t *testing.T) {
 	paths := writeMergeTestRuns(t, t.TempDir(), runs)
 	missingDirectory := filepath.Join(t.TempDir(), "missing")
 
-	if _, _, err := mergeRunPass(missingDirectory, paths, 2, 0); err == nil {
+	if _, _, err := mergeRunPass(missingDirectory, paths, 2, 1, 0); err == nil {
 		t.Fatal("mergeRunPass() error = nil")
 	}
 	for _, path := range paths {
@@ -142,7 +142,7 @@ func TestMergeRunPassRollsBackCompletedSuccessors(t *testing.T) {
 	runs[3] = append(runs[3], 0)
 	paths := writeMergeTestRuns(t, directory, runs)
 
-	if _, _, err := mergeRunPass(directory, paths, 2, 0); err == nil {
+	if _, _, err := mergeRunPass(directory, paths, 2, 1, 0); err == nil {
 		t.Fatal("mergeRunPass() error = nil")
 	}
 	for _, path := range append(paths, keepPath) {
@@ -159,7 +159,7 @@ func TestMergeRunPassRollsBackCompletedSuccessors(t *testing.T) {
 	}
 }
 
-func TestMergeRunsProducesSameBytesAcrossFanIn(t *testing.T) {
+func TestMergeRunsProducesSameBytesAcrossFanInAndWorkers(t *testing.T) {
 	const runCount = 10
 	runs := make([][]byte, runCount)
 	postings := make([]index.Posting, runCount)
@@ -181,16 +181,19 @@ func TestMergeRunsProducesSameBytesAcrossFanIn(t *testing.T) {
 	tests := []struct {
 		name        string
 		fanIn       int
+		workers     int
 		groupCounts []int
 	}{
-		{name: "fan-in 2", fanIn: 2, groupCounts: []int{5, 3, 2, 1}},
-		{name: "fan-in 3", fanIn: 3, groupCounts: []int{4, 2, 1}},
-		{name: "one pass", fanIn: 10, groupCounts: []int{1}},
+		{name: "fan-in 2", fanIn: 2, workers: 1, groupCounts: []int{5, 3, 2, 1}},
+		{name: "fan-in 3", fanIn: 3, workers: 1, groupCounts: []int{4, 2, 1}},
+		{name: "one pass", fanIn: 10, workers: 1, groupCounts: []int{1}},
+		{name: "two workers", fanIn: 2, workers: 2, groupCounts: []int{5, 3, 2, 1}},
+		{name: "four workers", fanIn: 2, workers: 4, groupCounts: []int{5, 3, 2, 1}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			paths := writeMergeTestRuns(t, t.TempDir(), runs)
-			path, stats, err := mergeRuns(t.TempDir(), paths, test.fanIn)
+			path, stats, err := mergeRuns(t.TempDir(), paths, test.fanIn, test.workers)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -234,7 +237,7 @@ func TestMergeRunsPreservesCurrentPassSourcesOnLaterFailure(t *testing.T) {
 	}
 	paths := writeMergeTestRuns(t, directory, runs)
 
-	if _, _, err := mergeRuns(directory, paths, 2); err == nil {
+	if _, _, err := mergeRuns(directory, paths, 2, 1); err == nil {
 		t.Fatal("mergeRuns() error = nil")
 	}
 	if _, err := os.Stat(paths[2]); err != nil {
@@ -266,7 +269,7 @@ func TestMergeRunsPreservesCurrentPassSourcesOnLaterFailure(t *testing.T) {
 }
 
 func TestMergeRunsCreatesCanonicalEmptyRun(t *testing.T) {
-	path, stats, err := mergeRuns(t.TempDir(), nil, 2)
+	path, stats, err := mergeRuns(t.TempDir(), nil, 2, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -291,7 +294,7 @@ func TestMergeRunsValidatesAndAdoptsSoleRun(t *testing.T) {
 	})
 	path := writeMergeTestRuns(t, directory, [][]byte{run})[0]
 
-	gotPath, stats, err := mergeRuns(t.TempDir(), []string{path}, 2)
+	gotPath, stats, err := mergeRuns(t.TempDir(), []string{path}, 2, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -306,15 +309,23 @@ func TestMergeRunsValidatesAndAdoptsSoleRun(t *testing.T) {
 	if err := os.WriteFile(corruptPath, append(run, 0), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := mergeRuns(t.TempDir(), []string{corruptPath}, 2); err == nil {
+	if _, _, err := mergeRuns(t.TempDir(), []string{corruptPath}, 2, 1); err == nil {
 		t.Fatal("mergeRuns() error = nil for corrupt sole run")
 	}
 }
 
-func TestMergeRunsRejectsFanInBeforeCreatingOutput(t *testing.T) {
+func TestMergeRunsRejectsInvalidConfigurationBeforeCreatingOutput(t *testing.T) {
 	directory := t.TempDir()
-	if _, _, err := mergeRuns(directory, nil, 1); err == nil {
-		t.Fatal("mergeRuns() error = nil")
+	for _, config := range []struct {
+		fanIn   int
+		workers int
+	}{
+		{fanIn: 1, workers: 1},
+		{fanIn: 2, workers: 0},
+	} {
+		if _, _, err := mergeRuns(directory, nil, config.fanIn, config.workers); err == nil {
+			t.Fatalf("mergeRuns(fanIn=%d, workers=%d) error = nil", config.fanIn, config.workers)
+		}
 	}
 
 	entries, err := os.ReadDir(directory)
