@@ -2,6 +2,7 @@ package indexfile
 
 import (
 	"bytes"
+	"hash/crc32"
 	"testing"
 )
 
@@ -51,5 +52,34 @@ func TestReadHeaderRejectsInvalidData(t *testing.T) {
 				t.Fatal("readHeader() error = nil")
 			}
 		})
+	}
+}
+
+func TestCRC32CFooterBytes(t *testing.T) {
+	checksum := crc32.Checksum([]byte("123456789"), crc32cTable)
+	if checksum != 0xe3069283 {
+		t.Fatalf("CRC32C = %08x, want e3069283", checksum)
+	}
+
+	var encoded bytes.Buffer
+	if err := writeFooter(&encoded, checksum); err != nil {
+		t.Fatal(err)
+	}
+	if want := []byte{0x83, 0x92, 0x06, 0xe3}; !bytes.Equal(encoded.Bytes(), want) {
+		t.Fatalf("footer = % x, want % x", encoded.Bytes(), want)
+	}
+
+	decoded, err := readFooter(bytes.NewReader(encoded.Bytes()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decoded != checksum {
+		t.Fatalf("readFooter() = %08x, want %08x", decoded, checksum)
+	}
+}
+
+func TestReadFooterRejectsTruncation(t *testing.T) {
+	if _, err := readFooter(bytes.NewReader(make([]byte, fileFooterBytes-1))); err == nil {
+		t.Fatal("readFooter() error = nil")
 	}
 }

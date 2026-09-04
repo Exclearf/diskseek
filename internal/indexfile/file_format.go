@@ -1,7 +1,9 @@
 package indexfile
 
 import (
+	"encoding/binary"
 	"fmt"
+	"hash/crc32"
 	"io"
 )
 
@@ -18,6 +20,10 @@ const (
 	documentOffsetsRole fileRole = "DSKDOFF"
 	documentDataRole    fileRole = "DSKDDAT"
 )
+
+const fileFooterBytes = 4
+
+var crc32cTable = crc32.MakeTable(crc32.Castagnoli)
 
 func writeHeader(writer io.Writer, role fileRole) error {
 	var header [fileHeaderBytes]byte
@@ -47,4 +53,21 @@ func readHeader(reader io.Reader, expectedRole fileRole) error {
 		)
 	}
 	return nil
+}
+
+func writeFooter(writer io.Writer, checksum uint32) error {
+	var footer [fileFooterBytes]byte
+	binary.LittleEndian.PutUint32(footer[:], checksum)
+	if _, err := writer.Write(footer[:]); err != nil {
+		return fmt.Errorf("write checksum footer: %w", err)
+	}
+	return nil
+}
+
+func readFooter(reader io.Reader) (uint32, error) {
+	var footer [fileFooterBytes]byte
+	if _, err := io.ReadFull(reader, footer[:]); err != nil {
+		return 0, fmt.Errorf("read checksum footer: %w", err)
+	}
+	return binary.LittleEndian.Uint32(footer[:]), nil
 }
