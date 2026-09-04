@@ -241,6 +241,48 @@ func TestMergeRunsProducesSameBytesAcrossFanIn(t *testing.T) {
 	}
 }
 
+func TestMergeRunsPreservesCurrentPassSourcesOnLaterFailure(t *testing.T) {
+	directory := t.TempDir()
+	runs := make([][]byte, 3)
+	for i, documentID := range []index.DocumentID{0, 1, 3} {
+		runs[i] = encodeMergeTestRun(t, runHeader{
+			firstDocumentID: documentID,
+			documentCount:   1,
+		}, nil)
+	}
+	paths := writeMergeTestRuns(t, directory, runs)
+
+	if _, _, err := mergeRuns(directory, paths, 2); err == nil {
+		t.Fatal("mergeRuns() error = nil")
+	}
+	if _, err := os.Stat(paths[2]); err != nil {
+		t.Fatalf("stat preserved file %q: %v", paths[2], err)
+	}
+
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("directory entries = %d, want 2", len(entries))
+	}
+
+	var successorPath string
+	for _, entry := range entries {
+		if entry.Name() != filepath.Base(paths[2]) {
+			successorPath = filepath.Join(directory, entry.Name())
+		}
+	}
+	got, err := os.ReadFile(successorPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := encodeMergeTestRun(t, runHeader{documentCount: 2}, nil)
+	if !bytes.Equal(got, want) {
+		t.Fatal("preserved pass source does not match expected bytes")
+	}
+}
+
 func TestMergeRunsCreatesCanonicalEmptyRun(t *testing.T) {
 	path, stats, err := mergeRuns(t.TempDir(), nil, 2)
 	if err != nil {
