@@ -56,7 +56,7 @@ func mergeRuns(ctx context.Context, directory string, paths []string, fanIn, wor
 		}
 		return path, nil, nil
 	case 1:
-		if err := validateRunFile(paths[0]); err != nil {
+		if err := validateRunFile(ctx, paths[0]); err != nil {
 			return "", nil, fmt.Errorf("validate sole run: %w", err)
 		}
 		return paths[0], nil, nil
@@ -217,7 +217,10 @@ func createEmptyRun(directory string) (string, error) {
 	return path, nil
 }
 
-func validateRunFile(path string) (err error) {
+func validateRunFile(ctx context.Context, path string) (err error) {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	input, err := os.Open(path)
 	if err != nil {
 		return err
@@ -225,20 +228,38 @@ func validateRunFile(path string) (err error) {
 	defer func() {
 		err = errors.Join(err, input.Close())
 	}()
+	return validateRun(ctx, input)
+}
 
+func validateRun(ctx context.Context, input io.Reader) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	reader, err := newRunReader(input)
 	if err != nil {
 		return err
 	}
+	postingsUntilCancellationCheck := 0
 	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		_, postingCount, readErr := reader.nextTerm()
 		if errors.Is(readErr, io.EOF) {
-			return nil
+			return ctx.Err()
 		}
 		if readErr != nil {
 			return readErr
 		}
 		for range postingCount {
+			if postingsUntilCancellationCheck == 0 {
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+				postingsUntilCancellationCheck = postingsPerCancellationCheck
+			}
+			postingsUntilCancellationCheck--
+
 			if _, readErr := reader.nextPosting(); readErr != nil {
 				return readErr
 			}

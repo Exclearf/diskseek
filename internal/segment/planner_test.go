@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -315,6 +316,23 @@ func TestMergeRunsValidatesAndAdoptsSoleRun(t *testing.T) {
 	}
 }
 
+func TestValidateRunStopsDuringHotTermWhenCanceled(t *testing.T) {
+	data := encodeHotTermRun(t, 0, 1<<16)
+	ctx, cancel := context.WithCancel(context.Background())
+	input := &cancelingReader{
+		Reader:           bytes.NewReader(data),
+		cancel:           cancel,
+		readsUntilCancel: 2,
+	}
+
+	if err := validateRun(ctx, input); !errors.Is(err, context.Canceled) {
+		t.Fatalf("validateRun() error = %v, want %v", err, context.Canceled)
+	}
+	if input.readBytes > 2*runBufferBytes {
+		t.Fatalf("bytes read after cancellation = %d, want at most %d", input.readBytes, 2*runBufferBytes)
+	}
+}
+
 func TestMergeRunsRejectsInvalidConfigurationBeforeCreatingOutput(t *testing.T) {
 	directory := t.TempDir()
 	for _, config := range []struct {
@@ -367,4 +385,21 @@ func writeMergeTestRuns(t *testing.T, directory string, runs [][]byte) []string 
 		}
 	}
 	return paths
+}
+
+type cancelingReader struct {
+	io.Reader
+	cancel           context.CancelFunc
+	readsUntilCancel int
+	readBytes        int
+}
+
+func (r *cancelingReader) Read(buffer []byte) (int, error) {
+	n, err := r.Reader.Read(buffer)
+	r.readBytes += n
+	r.readsUntilCancel--
+	if r.readsUntilCancel == 0 {
+		r.cancel()
+	}
+	return n, err
 }
