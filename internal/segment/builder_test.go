@@ -104,6 +104,7 @@ func TestBuildRunsWritesDocumentMetadataAndStatistics(t *testing.T) {
 		documentCount:      3,
 		documentsWithTerms: 2,
 		totalTokenCount:    3,
+		maxAccountedBytes:  segmentBufferBytes + 23,
 	}
 	if stats != wantStats {
 		t.Fatalf("statistics = %+v, want %+v", stats, wantStats)

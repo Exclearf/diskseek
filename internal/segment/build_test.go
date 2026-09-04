@@ -1,15 +1,19 @@
 package segment
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/Exclearf/diskseek/internal/corpus"
+	"github.com/Exclearf/diskseek/internal/index"
 )
 
 func TestBuildCreatesOwnedArtifacts(t *testing.T) {
@@ -38,7 +42,12 @@ func TestBuildCreatesOwnedArtifacts(t *testing.T) {
 			t.Fatalf("stat artifact %q: %v", path, err)
 		}
 	}
-	wantStats := buildStats{documentCount: 1, documentsWithTerms: 1, totalTokenCount: 1}
+	wantStats := buildStats{
+		documentCount:      1,
+		documentsWithTerms: 1,
+		totalTokenCount:    1,
+		maxAccountedBytes:  segmentBufferBytes + 14,
+	}
 	if result.stats != wantStats {
 		t.Fatalf("statistics = %+v, want %+v", result.stats, wantStats)
 	}
@@ -110,6 +119,99 @@ func TestBuildRejectsZeroFlushTargetWithoutCreatingArtifacts(t *testing.T) {
 	}
 	if len(entries) != 0 {
 		t.Fatalf("temporary parent entries = %v, want none", entries)
+	}
+}
+
+func TestBuildLogicalOutputDoesNotDependOnFlushTarget(t *testing.T) {
+	input, err := os.ReadFile("../index/testdata/corpus.tsv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := index.Build(corpus.NewTSVReader(bytes.NewReader(input)))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name     string
+		target   uint64
+		wantRuns int
+	}{
+		{name: "one run", target: math.MaxUint64, wantRuns: 1},
+		{name: "one run per document", target: segmentBufferBytes, wantRuns: len(want.Documents)},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result, err := build(
+				context.Background(),
+				corpus.NewTSVReader(bytes.NewReader(input)),
+				test.target,
+				t.TempDir(),
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			got := readBuildIndex(t, result)
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("logical index = %#v, want %#v", got, want)
+			}
+			if len(result.runPaths) != test.wantRuns {
+				t.Fatalf("run count = %d, want %d", len(result.runPaths), test.wantRuns)
+			}
+			if result.stats.documentCount != uint64(len(want.Documents)) {
+				t.Fatalf("document count = %d, want %d", result.stats.documentCount, len(want.Documents))
+			}
+		})
+	}
+}
+
+func readBuildIndex(t *testing.T, result buildResult) index.Index {
+	t.Helper()
+
+	documentData, err := os.ReadFile(result.documentsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	documents, err := decodeDocuments(documentData)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	postings := make(map[string][]index.Posting)
+	for _, path := range result.runPaths {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		reader, err := newRunReader(bytes.NewReader(data))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for {
+			term, postingCount, err := reader.nextTerm()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			for range postingCount {
+				posting, err := reader.nextPosting()
+				if err != nil {
+					t.Fatal(err)
+				}
+				postings[term] = append(postings[term], posting)
+			}
+		}
+	}
+
+	return index.Index{
+		Documents:          documents,
+		Postings:           postings,
+		DocumentsWithTerms: result.stats.documentsWithTerms,
+		TotalLength:        result.stats.totalTokenCount,
 	}
 }
 
