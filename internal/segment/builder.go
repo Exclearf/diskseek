@@ -21,9 +21,6 @@ func buildRuns(
 	documentOutput io.WriteCloser,
 	createOutput func() (io.WriteCloser, error),
 ) (stats buildStats, err error) {
-	if flushTarget == 0 {
-		return buildStats{}, errors.New("segment flush target must be positive")
-	}
 	documents, err := newDocumentWriter(documentOutput)
 	if err != nil {
 		return buildStats{}, err

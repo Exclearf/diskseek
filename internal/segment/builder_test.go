@@ -105,15 +105,3 @@ func TestBuildRunsWritesDocumentMetadataAndStatistics(t *testing.T) {
 		t.Fatalf("statistics = %+v, want %+v", stats, wantStats)
 	}
 }
-
-func TestBuildRunsRejectsZeroFlushTarget(t *testing.T) {
-	_, err := buildRuns(
-		corpus.NewTSVReader(strings.NewReader("")),
-		0,
-		&bufferWriteCloser{},
-		func() (io.WriteCloser, error) { return nil, nil },
-	)
-	if err == nil {
-		t.Fatal("buildRuns() error = nil")
-	}
-}
