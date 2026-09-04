@@ -40,7 +40,7 @@ func TestBuildRunsAtDocumentBoundaries(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			var outputs []*bufferWriteCloser
 			documentOutput := &bufferWriteCloser{}
-			err := buildRuns(
+			_, err := buildRuns(
 				corpus.NewTSVReader(strings.NewReader(test.input)),
 				test.target,
 				documentOutput,
@@ -69,10 +69,10 @@ func TestBuildRunsAtDocumentBoundaries(t *testing.T) {
 	}
 }
 
-func TestBuildRunsWritesDocumentMetadataInOrder(t *testing.T) {
+func TestBuildRunsWritesDocumentMetadataAndStatistics(t *testing.T) {
 	documentOutput := &bufferWriteCloser{}
-	err := buildRuns(
-		corpus.NewTSVReader(strings.NewReader("shared\ta a\nshared\t---\n")),
+	stats, err := buildRuns(
+		corpus.NewTSVReader(strings.NewReader("shared\ta a\nshared\t---\nlast\tb\n")),
 		segmentBufferBytes+1024,
 		documentOutput,
 		func() (io.WriteCloser, error) {
@@ -90,14 +90,24 @@ func TestBuildRunsWritesDocumentMetadataInOrder(t *testing.T) {
 	want := []index.DocumentMeta{
 		{ExternalID: "shared", Length: 2},
 		{ExternalID: "shared", Length: 0},
+		{ExternalID: "last", Length: 1},
 	}
 	if !reflect.DeepEqual(documents, want) {
 		t.Fatalf("documents = %#v, want %#v", documents, want)
 	}
+
+	wantStats := buildStats{
+		documentCount:      3,
+		documentsWithTerms: 2,
+		totalTokenCount:    3,
+	}
+	if stats != wantStats {
+		t.Fatalf("statistics = %+v, want %+v", stats, wantStats)
+	}
 }
 
 func TestBuildRunsRejectsZeroFlushTarget(t *testing.T) {
-	err := buildRuns(
+	_, err := buildRuns(
 		corpus.NewTSVReader(strings.NewReader("")),
 		0,
 		&bufferWriteCloser{},
