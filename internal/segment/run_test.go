@@ -192,25 +192,69 @@ func TestReadRunPostingRejectsInvalidData(t *testing.T) {
 }
 
 func TestRunWriterBytes(t *testing.T) {
-	output := &bufferWriteCloser{}
-	writer, err := newRunWriter(output, runHeader{firstDocumentID: 7, documentCount: 1})
+	const want = "44534b52554e303107000000010000000000000002000000676f0100000000000000070000000300000000000000"
+	if got := hex.EncodeToString(encodeOneTermRun(t)); got != want {
+		t.Fatalf("run bytes = %s, want %s", got, want)
+	}
+}
+
+func TestRunReader(t *testing.T) {
+	reader, err := newRunReader(bytes.NewReader(encodeOneTermRun(t)))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := writer.writeTerm("go", 1); err != nil {
-		t.Fatal(err)
-	}
-	if err := writer.writePosting(index.Posting{DocumentID: 7, Frequency: 3}); err != nil {
-		t.Fatal(err)
-	}
-	if err := writer.close(); err != nil {
-		t.Fatal(err)
+	if want := (runHeader{firstDocumentID: 7, documentCount: 1}); reader.header != want {
+		t.Fatalf("header = %+v, want %+v", reader.header, want)
 	}
 
-	const want = "44534b52554e303107000000010000000000000002000000676f0100000000000000070000000300000000000000"
-	if got := hex.EncodeToString(output.Bytes()); got != want {
-		t.Fatalf("run bytes = %s, want %s", got, want)
+	term, postingCount, err := reader.nextTerm()
+	if err != nil {
+		t.Fatal(err)
 	}
+	if term != "go" || postingCount != 1 {
+		t.Fatalf("nextTerm() = %q, %d; want %q, %d", term, postingCount, "go", 1)
+	}
+	posting, err := reader.nextPosting()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := (index.Posting{DocumentID: 7, Frequency: 3}); posting != want {
+		t.Fatalf("nextPosting() = %+v, want %+v", posting, want)
+	}
+	if _, _, err := reader.nextTerm(); !errors.Is(err, io.EOF) {
+		t.Fatalf("nextTerm() error = %v, want EOF", err)
+	}
+}
+
+func TestRunReaderRejectsPostingCountMismatch(t *testing.T) {
+	t.Run("next term before current term is complete", func(t *testing.T) {
+		reader, err := newRunReader(bytes.NewReader(encodeOneTermRun(t)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := reader.nextTerm(); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := reader.nextTerm(); err == nil {
+			t.Fatal("nextTerm() error = nil")
+		}
+	})
+
+	t.Run("more postings than declared", func(t *testing.T) {
+		reader, err := newRunReader(bytes.NewReader(encodeOneTermRun(t)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := reader.nextTerm(); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := reader.nextPosting(); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := reader.nextPosting(); err == nil {
+			t.Fatal("nextPosting() error = nil")
+		}
+	})
 }
 
 func TestRunWriterCloseReportsFlushAndCloseErrors(t *testing.T) {
@@ -352,6 +396,25 @@ func newTestRunWriter(t *testing.T, header runHeader) *runWriter {
 		t.Fatal(err)
 	}
 	return writer
+}
+
+func encodeOneTermRun(t *testing.T) []byte {
+	t.Helper()
+	output := &bufferWriteCloser{}
+	writer, err := newRunWriter(output, runHeader{firstDocumentID: 7, documentCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.writeTerm("go", 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.writePosting(index.Posting{DocumentID: 7, Frequency: 3}); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.close(); err != nil {
+		t.Fatal(err)
+	}
+	return output.Bytes()
 }
 
 type bufferWriteCloser struct {

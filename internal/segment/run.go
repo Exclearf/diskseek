@@ -122,6 +122,47 @@ func (w *runWriter) fail(err error) error {
 	return err
 }
 
+type runReader struct {
+	reader            *bufio.Reader
+	header            runHeader
+	postingsRemaining uint64
+}
+
+func newRunReader(input io.Reader) (*runReader, error) {
+	reader := bufio.NewReaderSize(input, runBufferBytes)
+	header, err := readRunHeader(reader)
+	if err != nil {
+		return nil, err
+	}
+	return &runReader{reader: reader, header: header}, nil
+}
+
+func (r *runReader) nextTerm() (string, uint64, error) {
+	if r.postingsRemaining != 0 {
+		return "", 0, errors.New("current run term has unread postings")
+	}
+
+	term, postingCount, err := readRunTermHeader(r.reader, r.header)
+	if err != nil {
+		return "", 0, err
+	}
+	r.postingsRemaining = postingCount
+	return term, postingCount, nil
+}
+
+func (r *runReader) nextPosting() (index.Posting, error) {
+	if r.postingsRemaining == 0 {
+		return index.Posting{}, errors.New("run posting has no active term")
+	}
+
+	posting, err := readRunPosting(r.reader, r.header)
+	if err != nil {
+		return index.Posting{}, err
+	}
+	r.postingsRemaining--
+	return posting, nil
+}
+
 func writeRunHeader(writer io.Writer, header runHeader) error {
 	if err := validateRunHeader(header); err != nil {
 		return err
