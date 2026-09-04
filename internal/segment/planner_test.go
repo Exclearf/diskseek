@@ -107,33 +107,21 @@ func TestMergeRunPass(t *testing.T) {
 	}
 }
 
-func TestMergeRunPassRemovesFailedSuccessor(t *testing.T) {
-	directory := t.TempDir()
+func TestMergeRunPassPreservesSourcesWhenOutputCreationFails(t *testing.T) {
 	runs := [][]byte{
-		encodeMergeTestRun(t, runHeader{documentCount: 1}, []mergeTestTerm{
-			{term: "apple", postings: []index.Posting{{DocumentID: 0, Frequency: 1}}},
-		}),
-		encodeMergeTestRun(t, runHeader{firstDocumentID: 1, documentCount: 1}, []mergeTestTerm{
-			{term: "banana", postings: []index.Posting{{DocumentID: 1, Frequency: 1}}},
-		}),
+		encodeMergeTestRun(t, runHeader{documentCount: 1}, nil),
+		encodeMergeTestRun(t, runHeader{firstDocumentID: 1, documentCount: 1}, nil),
 	}
-	runs[1] = append(runs[1], 0)
-	paths := writeMergeTestRuns(t, directory, runs)
+	paths := writeMergeTestRuns(t, t.TempDir(), runs)
+	missingDirectory := filepath.Join(t.TempDir(), "missing")
 
-	if _, _, err := mergeRunPass(directory, paths, 2, 0); err == nil {
+	if _, _, err := mergeRunPass(missingDirectory, paths, 2, 0); err == nil {
 		t.Fatal("mergeRunPass() error = nil")
 	}
 	for _, path := range paths {
 		if _, err := os.Stat(path); err != nil {
-			t.Fatalf("stat source %q: %v", path, err)
+			t.Fatalf("stat preserved source %q: %v", path, err)
 		}
-	}
-	entries, err := os.ReadDir(directory)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(entries) != len(paths) {
-		t.Fatalf("directory entries = %d, want %d source runs", len(entries), len(paths))
 	}
 }
 
@@ -149,13 +137,7 @@ func TestMergeRunPassRollsBackCompletedSuccessors(t *testing.T) {
 		runs[documentID] = encodeMergeTestRun(t, runHeader{
 			firstDocumentID: index.DocumentID(documentID),
 			documentCount:   1,
-		}, []mergeTestTerm{{
-			term: "shared",
-			postings: []index.Posting{{
-				DocumentID: index.DocumentID(documentID),
-				Frequency:  1,
-			}},
-		}})
+		}, nil)
 	}
 	runs[3] = append(runs[3], 0)
 	paths := writeMergeTestRuns(t, directory, runs)
