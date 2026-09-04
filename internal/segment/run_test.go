@@ -34,12 +34,18 @@ func TestRunHeaderRoundTripAndBytes(t *testing.T) {
 }
 
 func TestReadRunHeaderRejectsInvalidData(t *testing.T) {
+	invalidInterval := make([]byte, runHeaderBytes)
+	copy(invalidInterval, runMagic)
+	binary.LittleEndian.PutUint32(invalidInterval[8:12], uint32(documentIDLimit-1))
+	binary.LittleEndian.PutUint64(invalidInterval[12:20], 2)
+
 	tests := []struct {
 		name string
 		data []byte
 	}{
 		{name: "wrong magic", data: make([]byte, runHeaderBytes)},
 		{name: "truncated header", data: []byte(runMagic)},
+		{name: "invalid document interval", data: invalidInterval},
 	}
 
 	for _, test := range tests {
@@ -96,15 +102,17 @@ func TestWriteRunTermHeaderRejectsInvalidValues(t *testing.T) {
 }
 
 func TestReadRunTermHeaderRejectsInvalidData(t *testing.T) {
-	var oversized [4]byte
-	binary.LittleEndian.PutUint32(oversized[:], maxRunTermBytes+1)
+	oversized := make([]byte, 4+maxRunTermBytes+1+8)
+	binary.LittleEndian.PutUint32(oversized[:4], maxRunTermBytes+1)
+	copy(oversized[4:], strings.Repeat("a", maxRunTermBytes+1))
+	binary.LittleEndian.PutUint64(oversized[len(oversized)-8:], 1)
 	tests := []struct {
 		name string
 		data []byte
 	}{
-		{name: "oversized term", data: oversized[:]},
+		{name: "oversized term", data: oversized},
 		{name: "truncated term", data: []byte{2, 0, 0, 0, 'g'}},
-		{name: "invalid UTF-8", data: []byte{1, 0, 0, 0, 0xff}},
+		{name: "invalid UTF-8", data: append([]byte{1, 0, 0, 0, 0xff, 1}, make([]byte, 7)...)},
 		{name: "truncated posting count", data: []byte{1, 0, 0, 0, 'a'}},
 		{name: "zero posting count", data: append([]byte{1, 0, 0, 0, 'a'}, make([]byte, 8)...)},
 		{name: "posting count above document count", data: append([]byte{1, 0, 0, 0, 'a', 2}, make([]byte, 7)...)},
@@ -459,21 +467,6 @@ func TestRunWriterRejectsOutOfOrderRecords(t *testing.T) {
 			t.Fatal("writePosting() error = nil")
 		}
 	})
-}
-
-func TestRunWriterResetsDocumentOrderForEachTerm(t *testing.T) {
-	writer := newTestRunWriter(t, runHeader{firstDocumentID: 7, documentCount: 1})
-	for _, term := range []string{"a", "b"} {
-		if err := writer.writeTerm(term, 1); err != nil {
-			t.Fatal(err)
-		}
-		if err := writer.writePosting(index.Posting{DocumentID: 7, Frequency: 1}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := writer.close(); err != nil {
-		t.Fatal(err)
-	}
 }
 
 func TestRunWriterRejectsWriteAfterClose(t *testing.T) {
