@@ -1,6 +1,7 @@
 package segment
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"testing"
@@ -60,4 +61,43 @@ func TestRunMergeGroupsLimitsConcurrentGroups(t *testing.T) {
 	}
 	close(release)
 	<-done
+}
+
+func TestRunMergeGroupsStopsAfterConcurrentErrors(t *testing.T) {
+	groups := []mergeGroup{{groupIndex: 0}, {groupIndex: 1}, {groupIndex: 2}}
+	mergeErr := errors.New("merge failed")
+	started := make(chan int, len(groups))
+	release := make(chan struct{})
+	done := make(chan []mergeGroupResult, 1)
+
+	go func() {
+		done <- runMergeGroups(groups, 2, func(group mergeGroup) (string, uint64, uint64, error) {
+			started <- group.groupIndex
+			<-release
+			return "", 0, 0, mergeErr
+		})
+	}()
+
+	startedGroups := map[int]bool{<-started: true, <-started: true}
+	select {
+	case <-done:
+		close(release)
+		t.Fatal("runMergeGroups returned while groups were active")
+	default:
+	}
+	close(release)
+	results := <-done
+	close(started)
+	for groupIndex := range started {
+		startedGroups[groupIndex] = true
+	}
+
+	if len(startedGroups) != 2 || !startedGroups[0] || !startedGroups[1] {
+		t.Fatalf("started groups = %v, want groups 0 and 1", startedGroups)
+	}
+	for groupIndex := range 2 {
+		if !errors.Is(results[groupIndex].err, mergeErr) {
+			t.Fatalf("result %d error = %v, want %v", groupIndex, results[groupIndex].err, mergeErr)
+		}
+	}
 }
