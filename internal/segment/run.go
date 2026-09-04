@@ -123,6 +123,23 @@ func readRunTermHeader(reader io.Reader, run runHeader) (string, uint64, error) 
 	return string(termBytes), postingCount, nil
 }
 
+func writeRunPosting(writer io.Writer, run runHeader, posting index.Posting) error {
+	if posting.Frequency == 0 {
+		return errors.New("run posting has zero frequency")
+	}
+	if !documentInRun(run, posting.DocumentID) {
+		return errors.New("run posting document ID is outside the run")
+	}
+
+	var encoded [8]byte
+	binary.LittleEndian.PutUint32(encoded[0:4], uint32(posting.DocumentID))
+	binary.LittleEndian.PutUint32(encoded[4:8], posting.Frequency)
+	if _, err := writer.Write(encoded[:]); err != nil {
+		return fmt.Errorf("write run posting: %w", err)
+	}
+	return nil
+}
+
 func validateRunHeader(header runHeader) error {
 	if header.documentCount == 0 {
 		if header.firstDocumentID != 0 {

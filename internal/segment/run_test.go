@@ -135,6 +135,34 @@ func TestReadRunTermHeaderEndMarker(t *testing.T) {
 	}
 }
 
+func TestWriteRunPosting(t *testing.T) {
+	var output bytes.Buffer
+	posting := index.Posting{DocumentID: 0x01020304, Frequency: 0x05060708}
+	header := runHeader{firstDocumentID: posting.DocumentID, documentCount: 1}
+	if err := writeRunPosting(&output, header, posting); err != nil {
+		t.Fatal(err)
+	}
+
+	const want = "0403020108070605"
+	if got := hex.EncodeToString(output.Bytes()); got != want {
+		t.Fatalf("posting bytes = %s, want %s", got, want)
+	}
+}
+
+func TestWriteRunPostingRejectsInvalidValues(t *testing.T) {
+	header := runHeader{firstDocumentID: 7, documentCount: 1}
+	tests := []index.Posting{
+		{DocumentID: 7},
+		{DocumentID: 8, Frequency: 1},
+	}
+
+	for _, posting := range tests {
+		if err := writeRunPosting(io.Discard, header, posting); err == nil {
+			t.Errorf("writeRunPosting(%+v) error = nil", posting)
+		}
+	}
+}
+
 func TestRunHeaderDocumentInterval(t *testing.T) {
 	header := runHeader{firstDocumentID: 7, documentCount: 3}
 	if err := validateRunHeader(header); err != nil {
