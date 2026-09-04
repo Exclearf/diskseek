@@ -12,11 +12,19 @@ import (
 func buildRuns(
 	records *corpus.TSVReader,
 	flushTarget uint64,
+	documentOutput io.WriteCloser,
 	createOutput func() (io.WriteCloser, error),
-) error {
+) (err error) {
 	if flushTarget == 0 {
 		return errors.New("segment flush target must be positive")
 	}
+	documents, err := newDocumentWriter(documentOutput)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		err = errors.Join(err, documents.close())
+	}()
 
 	var documentCount uint64
 	segment := newSegmentState(0)
@@ -49,6 +57,12 @@ func buildRuns(
 			return err
 		}
 		accountedBytes := segment.addDocument(tokens)
+		if err := documents.write(index.DocumentMeta{
+			ExternalID: record.ExternalID,
+			Length:     uint32(len(tokens)),
+		}); err != nil {
+			return err
+		}
 		documentCount++
 
 		if accountedBytes >= flushTarget {

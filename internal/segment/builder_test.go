@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/Exclearf/diskseek/internal/corpus"
+	"github.com/Exclearf/diskseek/internal/index"
 )
 
 func TestBuildRunsAtDocumentBoundaries(t *testing.T) {
@@ -38,9 +39,11 @@ func TestBuildRunsAtDocumentBoundaries(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			var outputs []*bufferWriteCloser
+			documentOutput := &bufferWriteCloser{}
 			err := buildRuns(
 				corpus.NewTSVReader(strings.NewReader(test.input)),
 				test.target,
+				documentOutput,
 				func() (io.WriteCloser, error) {
 					output := &bufferWriteCloser{}
 					outputs = append(outputs, output)
@@ -66,10 +69,40 @@ func TestBuildRunsAtDocumentBoundaries(t *testing.T) {
 	}
 }
 
+func TestBuildRunsWritesDocumentMetadataInOrder(t *testing.T) {
+	documentOutput := &bufferWriteCloser{}
+	err := buildRuns(
+		corpus.NewTSVReader(strings.NewReader("shared\ta a\nshared\t---\n")),
+		segmentBufferBytes+1024,
+		documentOutput,
+		func() (io.WriteCloser, error) {
+			return &bufferWriteCloser{}, nil
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	documents, err := decodeDocuments(documentOutput.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []index.DocumentMeta{
+		{ExternalID: "shared", Length: 2},
+		{ExternalID: "shared", Length: 0},
+	}
+	if !reflect.DeepEqual(documents, want) {
+		t.Fatalf("documents = %#v, want %#v", documents, want)
+	}
+}
+
 func TestBuildRunsRejectsZeroFlushTarget(t *testing.T) {
-	err := buildRuns(corpus.NewTSVReader(strings.NewReader("")), 0, func() (io.WriteCloser, error) {
-		return nil, nil
-	})
+	err := buildRuns(
+		corpus.NewTSVReader(strings.NewReader("")),
+		0,
+		&bufferWriteCloser{},
+		func() (io.WriteCloser, error) { return nil, nil },
+	)
 	if err == nil {
 		t.Fatal("buildRuns() error = nil")
 	}
