@@ -140,6 +140,25 @@ func writeRunPosting(writer io.Writer, run runHeader, posting index.Posting) err
 	return nil
 }
 
+func readRunPosting(reader io.Reader, run runHeader) (index.Posting, error) {
+	var encoded [8]byte
+	if _, err := io.ReadFull(reader, encoded[:]); err != nil {
+		return index.Posting{}, fmt.Errorf("read run posting: %w", err)
+	}
+
+	posting := index.Posting{
+		DocumentID: index.DocumentID(binary.LittleEndian.Uint32(encoded[0:4])),
+		Frequency:  binary.LittleEndian.Uint32(encoded[4:8]),
+	}
+	if posting.Frequency == 0 {
+		return index.Posting{}, errors.New("run posting has zero frequency")
+	}
+	if !documentInRun(run, posting.DocumentID) {
+		return index.Posting{}, errors.New("run posting document ID is outside the run")
+	}
+	return posting, nil
+}
+
 func validateRunHeader(header runHeader) error {
 	if header.documentCount == 0 {
 		if header.firstDocumentID != 0 {

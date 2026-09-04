@@ -135,7 +135,7 @@ func TestReadRunTermHeaderEndMarker(t *testing.T) {
 	}
 }
 
-func TestWriteRunPosting(t *testing.T) {
+func TestRunPostingRoundTripAndBytes(t *testing.T) {
 	var output bytes.Buffer
 	posting := index.Posting{DocumentID: 0x01020304, Frequency: 0x05060708}
 	header := runHeader{firstDocumentID: posting.DocumentID, documentCount: 1}
@@ -146,6 +146,14 @@ func TestWriteRunPosting(t *testing.T) {
 	const want = "0403020108070605"
 	if got := hex.EncodeToString(output.Bytes()); got != want {
 		t.Fatalf("posting bytes = %s, want %s", got, want)
+	}
+
+	got, err := readRunPosting(bytes.NewReader(output.Bytes()), header)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != posting {
+		t.Fatalf("readRunPosting() = %+v, want %+v", got, posting)
 	}
 }
 
@@ -160,6 +168,26 @@ func TestWriteRunPostingRejectsInvalidValues(t *testing.T) {
 		if err := writeRunPosting(io.Discard, header, posting); err == nil {
 			t.Errorf("writeRunPosting(%+v) error = nil", posting)
 		}
+	}
+}
+
+func TestReadRunPostingRejectsInvalidData(t *testing.T) {
+	header := runHeader{firstDocumentID: 7, documentCount: 1}
+	tests := []struct {
+		name string
+		data []byte
+	}{
+		{name: "truncated posting", data: []byte{7, 0, 0, 0, 1, 0, 0}},
+		{name: "zero frequency", data: []byte{7, 0, 0, 0, 0, 0, 0, 0}},
+		{name: "document outside run", data: []byte{8, 0, 0, 0, 1, 0, 0, 0}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := readRunPosting(bytes.NewReader(test.data), header); err == nil {
+				t.Fatal("readRunPosting() error = nil")
+			}
+		})
 	}
 }
 
