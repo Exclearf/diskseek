@@ -51,6 +51,35 @@ func TestMergeRunGroup(t *testing.T) {
 	}
 }
 
+func TestMergeRunGroupStreamsHotTerm(t *testing.T) {
+	const fanIn = 3
+	const accountedBufferBytes = (fanIn + 1) * runBufferBytes
+
+	for _, documentsPerRun := range []uint64{1 << 12, 1 << 16} {
+		flow := &mergeFlow{}
+		inputs := make([]io.Reader, fanIn)
+		for runOrdinal := range fanIn {
+			firstDocumentID := index.DocumentID(uint64(runOrdinal) * documentsPerRun)
+			input := bytes.NewReader(encodeHotTermRun(t, firstDocumentID, documentsPerRun))
+			inputs[runOrdinal] = &mergeFlowReader{Reader: input, flow: flow}
+		}
+
+		if err := mergeRunGroup(inputs, flow); err != nil {
+			t.Fatal(err)
+		}
+
+		totalPostings := uint64(fanIn) * documentsPerRun
+		wantOutputBytes := int64(runHeaderBytes+4+len("hot")+8+4) + int64(totalPostings)*8
+		if flow.writtenBytes != wantOutputBytes {
+			t.Fatalf("%d postings: output bytes = %d, want %d", totalPostings, flow.writtenBytes, wantOutputBytes)
+		}
+		if flow.maxReadAheadBytes > accountedBufferBytes {
+			t.Fatalf("%d postings: maximum read-ahead = %d bytes, want at most %d", totalPostings, flow.maxReadAheadBytes, accountedBufferBytes)
+		}
+		t.Logf("postings=%d, fixed buffers=%d bytes, maximum read-ahead=%d bytes", totalPostings, accountedBufferBytes, flow.maxReadAheadBytes)
+	}
+}
+
 func TestMergeRunGroupRejectsInvalidGroup(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -144,6 +173,61 @@ func encodeMergeTestRun(t *testing.T, header runHeader, terms []mergeTestTerm) [
 		t.Fatal(err)
 	}
 	return output.Bytes()
+}
+
+func encodeHotTermRun(t *testing.T, firstDocumentID index.DocumentID, documentCount uint64) []byte {
+	t.Helper()
+	output := &bufferWriteCloser{}
+	writer, err := newRunWriter(output, runHeader{
+		firstDocumentID: firstDocumentID,
+		documentCount:   documentCount,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.writeTerm("hot", documentCount); err != nil {
+		t.Fatal(err)
+	}
+	for offset := range documentCount {
+		posting := index.Posting{
+			DocumentID: firstDocumentID + index.DocumentID(offset),
+			Frequency:  1,
+		}
+		if err := writer.writePosting(posting); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := writer.close(); err != nil {
+		t.Fatal(err)
+	}
+	return output.Bytes()
+}
+
+type mergeFlow struct {
+	readBytes         int64
+	writtenBytes      int64
+	maxReadAheadBytes int64
+}
+
+func (f *mergeFlow) Write(buffer []byte) (int, error) {
+	f.writtenBytes += int64(len(buffer))
+	return len(buffer), nil
+}
+
+func (*mergeFlow) Close() error {
+	return nil
+}
+
+type mergeFlowReader struct {
+	io.Reader
+	flow *mergeFlow
+}
+
+func (r *mergeFlowReader) Read(buffer []byte) (int, error) {
+	read, err := r.Reader.Read(buffer)
+	r.flow.readBytes += int64(read)
+	r.flow.maxReadAheadBytes = max(r.flow.maxReadAheadBytes, r.flow.readBytes-r.flow.writtenBytes)
+	return read, err
 }
 
 type mergeCloseErrorBuffer struct {
