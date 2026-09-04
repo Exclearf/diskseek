@@ -167,6 +167,50 @@ func TestBuildLogicalOutputDoesNotDependOnFlushTarget(t *testing.T) {
 	}
 }
 
+func TestBuildArtifactBytesAreDeterministic(t *testing.T) {
+	input, err := os.ReadFile("../index/testdata/corpus.tsv")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	buildOnce := func() buildResult {
+		result, err := build(
+			context.Background(),
+			corpus.NewTSVReader(bytes.NewReader(input)),
+			math.MaxUint64,
+			t.TempDir(),
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return result
+	}
+
+	first := buildOnce()
+	second := buildOnce()
+	if first.stats != second.stats {
+		t.Fatalf("build statistics differ: %+v and %+v", first.stats, second.stats)
+	}
+	if !reflect.DeepEqual(readBuildArtifacts(t, first), readBuildArtifacts(t, second)) {
+		t.Fatal("build artifact bytes differ")
+	}
+}
+
+func readBuildArtifacts(t *testing.T, result buildResult) [][]byte {
+	t.Helper()
+
+	paths := append([]string{result.documentsPath}, result.runPaths...)
+	artifacts := make([][]byte, len(paths))
+	for i, path := range paths {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		artifacts[i] = data
+	}
+	return artifacts
+}
+
 func readBuildIndex(t *testing.T, result buildResult) index.Index {
 	t.Helper()
 
