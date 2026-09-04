@@ -84,7 +84,11 @@ func mergeRunPass(
 	for _, group := range groups {
 		path, inputBytes, outputBytes, err := mergeFileGroup(directory, passIndex, group)
 		if err != nil {
-			return nil, nil, fmt.Errorf("merge pass %d group %d: %w", passIndex, group.groupIndex, err)
+			mergeErr := fmt.Errorf("merge pass %d group %d: %w", passIndex, group.groupIndex, err)
+			for _, successor := range successors[:group.groupIndex] {
+				mergeErr = errors.Join(mergeErr, os.Remove(successor))
+			}
+			return nil, nil, mergeErr
 		}
 		successors[group.groupIndex] = path
 		stats[group.groupIndex] = mergeGroupStats{

@@ -128,6 +128,46 @@ func TestMergeRunPassRemovesFailedSuccessor(t *testing.T) {
 	}
 }
 
+func TestMergeRunPassRollsBackCompletedSuccessors(t *testing.T) {
+	directory := t.TempDir()
+	keepPath := filepath.Join(directory, "keep")
+	if err := os.WriteFile(keepPath, []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	runs := make([][]byte, 4)
+	for documentID := range runs {
+		runs[documentID] = encodeMergeTestRun(t, runHeader{
+			firstDocumentID: index.DocumentID(documentID),
+			documentCount:   1,
+		}, []mergeTestTerm{{
+			term: "shared",
+			postings: []index.Posting{{
+				DocumentID: index.DocumentID(documentID),
+				Frequency:  1,
+			}},
+		}})
+	}
+	runs[3] = append(runs[3], 0)
+	paths := writeMergeTestRuns(t, directory, runs)
+
+	if _, _, err := mergeRunPass(directory, paths, 2, 0); err == nil {
+		t.Fatal("mergeRunPass() error = nil")
+	}
+	for _, path := range append(paths, keepPath) {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("stat preserved file %q: %v", path, err)
+		}
+	}
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != len(paths)+1 {
+		t.Fatalf("directory entries = %d, want %d source and unrelated files", len(entries), len(paths)+1)
+	}
+}
+
 func TestMergeRunsProducesSameBytesAcrossFanIn(t *testing.T) {
 	const runCount = 10
 	runs := make([][]byte, runCount)
