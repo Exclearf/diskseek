@@ -3,6 +3,7 @@ package segment
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"reflect"
 	"strings"
@@ -106,5 +107,19 @@ func TestBuildRunsWritesDocumentMetadataAndStatistics(t *testing.T) {
 	}
 	if stats != wantStats {
 		t.Fatalf("statistics = %+v, want %+v", stats, wantStats)
+	}
+}
+
+func TestBuildRunsReportsDocumentCloseError(t *testing.T) {
+	closeErr := errors.New("close document output")
+	_, err := buildRuns(
+		context.Background(),
+		corpus.NewTSVReader(strings.NewReader("")),
+		segmentBufferBytes,
+		&failingWriteCloser{writeErr: errors.New("write document output"), closeErr: closeErr},
+		func() (io.WriteCloser, error) { return nil, nil },
+	)
+	if !errors.Is(err, closeErr) {
+		t.Fatalf("buildRuns() error = %v, want %v", err, closeErr)
 	}
 }
