@@ -1,6 +1,7 @@
 package segment
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"reflect"
@@ -12,7 +13,7 @@ func TestRunMergeGroupsOrdersOutOfOrderResults(t *testing.T) {
 	secondFinished := make(chan struct{})
 	var completionOrder []int
 
-	got := runMergeGroups(groups, 2, func(group mergeGroup) (string, uint64, uint64, error) {
+	got := runMergeGroups(context.Background(), groups, 2, func(_ context.Context, group mergeGroup) (string, uint64, uint64, error) {
 		if group.groupIndex == 0 {
 			<-secondFinished
 		} else {
@@ -44,7 +45,7 @@ func TestRunMergeGroupsLimitsConcurrentGroups(t *testing.T) {
 	done := make(chan struct{})
 
 	go func() {
-		runMergeGroups(groups, 2, func(group mergeGroup) (string, uint64, uint64, error) {
+		runMergeGroups(context.Background(), groups, 2, func(_ context.Context, group mergeGroup) (string, uint64, uint64, error) {
 			started <- group.groupIndex
 			<-release
 			return "", 0, 0, nil
@@ -63,41 +64,33 @@ func TestRunMergeGroupsLimitsConcurrentGroups(t *testing.T) {
 	<-done
 }
 
-func TestRunMergeGroupsStopsAfterConcurrentErrors(t *testing.T) {
+func TestRunMergeGroupsCancelsActiveSiblingAfterError(t *testing.T) {
 	groups := []mergeGroup{{groupIndex: 0}, {groupIndex: 1}, {groupIndex: 2}}
 	mergeErr := errors.New("merge failed")
-	started := make(chan int, len(groups))
-	release := make(chan struct{})
-	done := make(chan []mergeGroupResult, 1)
+	siblingStarted := make(chan struct{})
+	var started [3]bool
 
-	go func() {
-		done <- runMergeGroups(groups, 2, func(group mergeGroup) (string, uint64, uint64, error) {
-			started <- group.groupIndex
-			<-release
+	results := runMergeGroups(context.Background(), groups, 2, func(ctx context.Context, group mergeGroup) (string, uint64, uint64, error) {
+		started[group.groupIndex] = true
+		switch group.groupIndex {
+		case 0:
+			<-siblingStarted
 			return "", 0, 0, mergeErr
-		})
-	}()
-
-	startedGroups := map[int]bool{<-started: true, <-started: true}
-	select {
-	case <-done:
-		close(release)
-		t.Fatal("runMergeGroups returned while groups were active")
-	default:
-	}
-	close(release)
-	results := <-done
-	close(started)
-	for groupIndex := range started {
-		startedGroups[groupIndex] = true
-	}
-
-	if len(startedGroups) != 2 || !startedGroups[0] || !startedGroups[1] {
-		t.Fatalf("started groups = %v, want groups 0 and 1", startedGroups)
-	}
-	for groupIndex := range 2 {
-		if !errors.Is(results[groupIndex].err, mergeErr) {
-			t.Fatalf("result %d error = %v, want %v", groupIndex, results[groupIndex].err, mergeErr)
+		case 1:
+			close(siblingStarted)
+			<-ctx.Done()
+			return "", 0, 0, ctx.Err()
+		default:
+			return "", 0, 0, nil
 		}
+	})
+	if !started[0] || !started[1] || started[2] {
+		t.Fatalf("started groups = %v, want [true true false]", started)
+	}
+	if !errors.Is(results[0].err, mergeErr) {
+		t.Fatalf("result 0 error = %v, want %v", results[0].err, mergeErr)
+	}
+	if !errors.Is(results[1].err, context.Canceled) {
+		t.Fatalf("result 1 error = %v, want %v", results[1].err, context.Canceled)
 	}
 }

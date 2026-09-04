@@ -1,6 +1,7 @@
 package segment
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -36,12 +37,15 @@ func planMergePass(paths []string, fanIn int) ([]mergeGroup, error) {
 	return groups, nil
 }
 
-func mergeRuns(directory string, paths []string, fanIn, workers int) (string, []mergeGroupStats, error) {
+func mergeRuns(ctx context.Context, directory string, paths []string, fanIn, workers int) (string, []mergeGroupStats, error) {
 	if fanIn < 2 {
 		return "", nil, errors.New("merge fan-in must be at least two")
 	}
 	if workers < 1 {
 		return "", nil, errors.New("merge worker count must be positive")
+	}
+	if err := ctx.Err(); err != nil {
+		return "", nil, err
 	}
 
 	switch len(paths) {
@@ -61,7 +65,7 @@ func mergeRuns(directory string, paths []string, fanIn, workers int) (string, []
 	currentPaths := paths
 	var stats []mergeGroupStats
 	for passIndex := 0; len(currentPaths) > 1; passIndex++ {
-		successors, passStats, err := mergeRunPass(directory, currentPaths, fanIn, workers, passIndex)
+		successors, passStats, err := mergeRunPass(ctx, directory, currentPaths, fanIn, workers, passIndex)
 		if err != nil {
 			return "", nil, err
 		}
@@ -72,6 +76,7 @@ func mergeRuns(directory string, paths []string, fanIn, workers int) (string, []
 }
 
 func mergeRunPass(
+	ctx context.Context,
 	directory string,
 	paths []string,
 	fanIn int,
@@ -83,11 +88,11 @@ func mergeRunPass(
 		return nil, nil, err
 	}
 
-	results := runMergeGroups(groups, workers, func(group mergeGroup) (string, uint64, uint64, error) {
-		return mergeFileGroup(directory, passIndex, group)
+	results := runMergeGroups(ctx, groups, workers, func(ctx context.Context, group mergeGroup) (string, uint64, uint64, error) {
+		return mergeFileGroup(ctx, directory, passIndex, group)
 	})
 
-	var mergeErr error
+	mergeErr := ctx.Err()
 	for _, result := range results {
 		if result.err != nil {
 			mergeErr = errors.Join(mergeErr, fmt.Errorf("merge pass %d group %d: %w", passIndex, result.groupIndex, result.err))
@@ -129,10 +134,14 @@ func mergeRunPass(
 }
 
 func mergeFileGroup(
+	ctx context.Context,
 	directory string,
 	passIndex int,
 	group mergeGroup,
 ) (outputPath string, inputBytes uint64, outputBytes uint64, err error) {
+	if err := ctx.Err(); err != nil {
+		return "", 0, 0, err
+	}
 	if len(group.inputPaths) == 1 {
 		info, err := os.Stat(group.inputPaths[0])
 		if err != nil {

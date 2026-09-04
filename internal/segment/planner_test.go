@@ -2,6 +2,7 @@ package segment
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -55,7 +56,7 @@ func TestMergeRunPass(t *testing.T) {
 
 	paths := writeMergeTestRuns(t, directory, runs)
 
-	gotPaths, gotStats, err := mergeRunPass(directory, paths, 3, 1, 0)
+	gotPaths, gotStats, err := mergeRunPass(context.Background(), directory, paths, 3, 1, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +116,7 @@ func TestMergeRunPassPreservesSourcesWhenOutputCreationFails(t *testing.T) {
 	paths := writeMergeTestRuns(t, t.TempDir(), runs)
 	missingDirectory := filepath.Join(t.TempDir(), "missing")
 
-	if _, _, err := mergeRunPass(missingDirectory, paths, 2, 1, 0); err == nil {
+	if _, _, err := mergeRunPass(context.Background(), missingDirectory, paths, 2, 1, 0); err == nil {
 		t.Fatal("mergeRunPass() error = nil")
 	}
 	for _, path := range paths {
@@ -142,7 +143,7 @@ func TestMergeRunPassRollsBackCompletedSuccessors(t *testing.T) {
 	runs[3] = append(runs[3], 0)
 	paths := writeMergeTestRuns(t, directory, runs)
 
-	if _, _, err := mergeRunPass(directory, paths, 2, 1, 0); err == nil {
+	if _, _, err := mergeRunPass(context.Background(), directory, paths, 2, 1, 0); err == nil {
 		t.Fatal("mergeRunPass() error = nil")
 	}
 	for _, path := range append(paths, keepPath) {
@@ -193,7 +194,7 @@ func TestMergeRunsProducesSameBytesAcrossFanInAndWorkers(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			paths := writeMergeTestRuns(t, t.TempDir(), runs)
-			path, stats, err := mergeRuns(t.TempDir(), paths, test.fanIn, test.workers)
+			path, stats, err := mergeRuns(context.Background(), t.TempDir(), paths, test.fanIn, test.workers)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -237,7 +238,7 @@ func TestMergeRunsPreservesCurrentPassSourcesOnLaterFailure(t *testing.T) {
 	}
 	paths := writeMergeTestRuns(t, directory, runs)
 
-	if _, _, err := mergeRuns(directory, paths, 2, 1); err == nil {
+	if _, _, err := mergeRuns(context.Background(), directory, paths, 2, 1); err == nil {
 		t.Fatal("mergeRuns() error = nil")
 	}
 	if _, err := os.Stat(paths[2]); err != nil {
@@ -269,7 +270,7 @@ func TestMergeRunsPreservesCurrentPassSourcesOnLaterFailure(t *testing.T) {
 }
 
 func TestMergeRunsCreatesCanonicalEmptyRun(t *testing.T) {
-	path, stats, err := mergeRuns(t.TempDir(), nil, 2, 1)
+	path, stats, err := mergeRuns(context.Background(), t.TempDir(), nil, 2, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -294,7 +295,7 @@ func TestMergeRunsValidatesAndAdoptsSoleRun(t *testing.T) {
 	})
 	path := writeMergeTestRuns(t, directory, [][]byte{run})[0]
 
-	gotPath, stats, err := mergeRuns(t.TempDir(), []string{path}, 2, 1)
+	gotPath, stats, err := mergeRuns(context.Background(), t.TempDir(), []string{path}, 2, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -309,7 +310,7 @@ func TestMergeRunsValidatesAndAdoptsSoleRun(t *testing.T) {
 	if err := os.WriteFile(corruptPath, append(run, 0), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := mergeRuns(t.TempDir(), []string{corruptPath}, 2, 1); err == nil {
+	if _, _, err := mergeRuns(context.Background(), t.TempDir(), []string{corruptPath}, 2, 1); err == nil {
 		t.Fatal("mergeRuns() error = nil for corrupt sole run")
 	}
 }
@@ -323,9 +324,27 @@ func TestMergeRunsRejectsInvalidConfigurationBeforeCreatingOutput(t *testing.T) 
 		{fanIn: 1, workers: 1},
 		{fanIn: 2, workers: 0},
 	} {
-		if _, _, err := mergeRuns(directory, nil, config.fanIn, config.workers); err == nil {
+		if _, _, err := mergeRuns(context.Background(), directory, nil, config.fanIn, config.workers); err == nil {
 			t.Fatalf("mergeRuns(fanIn=%d, workers=%d) error = nil", config.fanIn, config.workers)
 		}
+	}
+
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("output count = %d, want 0", len(entries))
+	}
+}
+
+func TestMergeRunsRejectsCanceledContextBeforeCreatingOutput(t *testing.T) {
+	directory := t.TempDir()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if _, _, err := mergeRuns(ctx, directory, nil, 2, 1); !errors.Is(err, context.Canceled) {
+		t.Fatalf("mergeRuns() error = %v, want %v", err, context.Canceled)
 	}
 
 	entries, err := os.ReadDir(directory)

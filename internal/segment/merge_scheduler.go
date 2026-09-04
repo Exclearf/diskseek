@@ -1,6 +1,9 @@
 package segment
 
-import "sync"
+import (
+	"context"
+	"sync"
+)
 
 type mergeGroupResult struct {
 	groupIndex  int
@@ -11,14 +14,16 @@ type mergeGroupResult struct {
 }
 
 func runMergeGroups(
+	ctx context.Context,
 	groups []mergeGroup,
 	workers int,
-	merge func(mergeGroup) (string, uint64, uint64, error),
+	merge func(context.Context, mergeGroup) (string, uint64, uint64, error),
 ) []mergeGroupResult {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	jobs := make(chan mergeGroup)
 	completed := make(chan mergeGroupResult, len(groups))
-	stop := make(chan struct{})
-	var stopOnce sync.Once
 
 	workerCount := min(workers, len(groups))
 	var workerGroup sync.WaitGroup
@@ -28,21 +33,21 @@ func runMergeGroups(
 			defer workerGroup.Done()
 			for {
 				select {
-				case <-stop:
+				case <-ctx.Done():
 					return
 				case group, ok := <-jobs:
 					if !ok {
 						return
 					}
 					select {
-					case <-stop:
+					case <-ctx.Done():
 						return
 					default:
 					}
 
-					path, inputBytes, outputBytes, err := merge(group)
+					path, inputBytes, outputBytes, err := merge(ctx, group)
 					if err != nil {
-						stopOnce.Do(func() { close(stop) })
+						cancel()
 					}
 					completed <- mergeGroupResult{
 						groupIndex:  group.groupIndex,
@@ -62,7 +67,7 @@ func runMergeGroups(
 dispatch:
 	for _, group := range groups {
 		select {
-		case <-stop:
+		case <-ctx.Done():
 			break dispatch
 		case jobs <- group:
 		}
