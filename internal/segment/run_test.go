@@ -577,15 +577,15 @@ func (w *failingWriteCloser) Close() error {
 	return w.closeErr
 }
 
-func TestRunHeaderRejectsInvalidInterval(t *testing.T) {
+func TestWriteRunHeaderRejectsInvalidInterval(t *testing.T) {
 	tests := []runHeader{
 		{firstDocumentID: 1},
 		{firstDocumentID: index.DocumentID(documentIDLimit - 1), documentCount: 2},
 	}
 
 	for _, header := range tests {
-		if err := validateRunHeader(header); err == nil {
-			t.Errorf("validateRunHeader(%+v) error = nil", header)
+		if err := writeRunHeader(io.Discard, header); err == nil {
+			t.Errorf("writeRunHeader(%+v) error = nil", header)
 		}
 	}
 }

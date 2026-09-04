@@ -71,7 +71,12 @@ func TestDocumentReaderRejectsInvalidData(t *testing.T) {
 			return data
 		}},
 		{name: "oversized external ID", corrupt: func(data []byte) []byte {
+			data = make([]byte, len(documentMagic)+4+corpus.MaxExternalIDBytes+1+4+4)
+			copy(data, documentMagic)
 			binary.LittleEndian.PutUint32(data[8:12], corpus.MaxExternalIDBytes+1)
+			for i := 12; i < 12+corpus.MaxExternalIDBytes+1; i++ {
+				data[i] = 'a'
+			}
 			return data
 		}},
 		{name: "invalid UTF-8 external ID", corrupt: func(data []byte) []byte {
