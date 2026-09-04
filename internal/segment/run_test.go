@@ -226,6 +226,40 @@ func TestRunReader(t *testing.T) {
 	}
 }
 
+func TestRunWithoutTermsRoundTrip(t *testing.T) {
+	tests := []struct {
+		name   string
+		header runHeader
+	}{
+		{name: "empty run"},
+		{name: "complete document ID space", header: runHeader{documentCount: documentIDLimit}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			output := &bufferWriteCloser{}
+			writer, err := newRunWriter(output, test.header)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := writer.close(); err != nil {
+				t.Fatal(err)
+			}
+
+			reader, err := newRunReader(bytes.NewReader(output.Bytes()))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if reader.header != test.header {
+				t.Fatalf("header = %+v, want %+v", reader.header, test.header)
+			}
+			if _, _, err := reader.nextTerm(); !errors.Is(err, io.EOF) {
+				t.Fatalf("nextTerm() error = %v, want EOF", err)
+			}
+		})
+	}
+}
+
 func TestRunReaderRejectsPostingCountMismatch(t *testing.T) {
 	t.Run("next term before current term is complete", func(t *testing.T) {
 		reader, err := newRunReader(bytes.NewReader(encodeOneTermRun(t)))
@@ -302,24 +336,43 @@ func TestRunReaderRejectsOutOfOrderRecords(t *testing.T) {
 	})
 }
 
-func TestRunReaderResetsDocumentOrderForEachTerm(t *testing.T) {
+func TestMultiTermRunRoundTrip(t *testing.T) {
 	reader, err := newRunReader(bytes.NewReader(encodeTwoTermRun(t)))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := reader.nextTerm(); err != nil {
+	term, postingCount, err := reader.nextTerm()
+	if err != nil {
 		t.Fatal(err)
 	}
-	for range 2 {
-		if _, err := reader.nextPosting(); err != nil {
+	if term != "a" || postingCount != 2 {
+		t.Fatalf("nextTerm() = %q, %d; want %q, %d", term, postingCount, "a", 2)
+	}
+	for _, want := range []index.DocumentID{7, 8} {
+		posting, err := reader.nextPosting()
+		if err != nil {
 			t.Fatal(err)
 		}
+		if posting.DocumentID != want || posting.Frequency != 1 {
+			t.Fatalf("nextPosting() = %+v, want document %d with frequency 1", posting, want)
+		}
 	}
-	if _, _, err := reader.nextTerm(); err != nil {
+	term, postingCount, err = reader.nextTerm()
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := reader.nextPosting(); err != nil {
+	if term != "b" || postingCount != 1 {
+		t.Fatalf("nextTerm() = %q, %d; want %q, %d", term, postingCount, "b", 1)
+	}
+	posting, err := reader.nextPosting()
+	if err != nil {
 		t.Fatal(err)
+	}
+	if want := (index.Posting{DocumentID: 7, Frequency: 1}); posting != want {
+		t.Fatalf("nextPosting() = %+v, want %+v", posting, want)
+	}
+	if _, _, err := reader.nextTerm(); !errors.Is(err, io.EOF) {
+		t.Fatalf("nextTerm() error = %v, want EOF", err)
 	}
 }
 
