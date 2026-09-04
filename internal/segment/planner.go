@@ -209,15 +209,15 @@ func createEmptyRun(directory string) (string, error) {
 
 	writer, err := newRunWriter(output, runHeader{})
 	if err != nil {
-		return "", err
+		return "", errors.Join(err, os.Remove(path))
 	}
 	if err := writer.close(); err != nil {
-		return "", err
+		return "", errors.Join(err, os.Remove(path))
 	}
 	return path, nil
 }
 
-func validateRunFile(ctx context.Context, path string) (err error) {
+func validateRunFile(ctx context.Context, path string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -225,10 +225,8 @@ func validateRunFile(ctx context.Context, path string) (err error) {
 	if err != nil {
 		return err
 	}
-	defer func() {
-		err = errors.Join(err, input.Close())
-	}()
-	return validateRun(ctx, input)
+	validateErr := validateRun(ctx, input)
+	return errors.Join(validateErr, input.Close())
 }
 
 func validateRun(ctx context.Context, input io.Reader) error {

@@ -9,8 +9,10 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
+	"github.com/Exclearf/diskseek/internal/corpus"
 	"github.com/Exclearf/diskseek/internal/index"
 )
 
@@ -159,6 +161,7 @@ func TestMergeRunPassRollsBackCompletedSuccessors(t *testing.T) {
 	if len(entries) != len(paths)+1 {
 		t.Fatalf("directory entries = %d, want %d source and unrelated files", len(entries), len(paths)+1)
 	}
+	assertNoOpenFilesInDirectory(t, directory)
 }
 
 func TestMergeRunsProducesSameBytesAcrossFanInAndWorkers(t *testing.T) {
@@ -225,6 +228,39 @@ func TestMergeRunsProducesSameBytesAcrossFanInAndWorkers(t *testing.T) {
 				t.Fatalf("statistics count = %d, want %d", len(stats), statIndex)
 			}
 		})
+	}
+}
+
+func TestMergeRunsMatchesInMemoryIndex(t *testing.T) {
+	input, err := os.ReadFile("../index/testdata/corpus.tsv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := index.Build(corpus.NewTSVReader(bytes.NewReader(input)))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := build(
+		context.Background(),
+		corpus.NewTSVReader(bytes.NewReader(input)),
+		segmentBufferBytes,
+		t.TempDir(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.runPaths) < 3 {
+		t.Fatalf("run count = %d, want at least 3 for a multipass merge", len(result.runPaths))
+	}
+
+	path, _, err := mergeRuns(context.Background(), result.directory, result.runPaths, 2, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result.runPaths = []string{path}
+	if got := readBuildIndex(t, result); !reflect.DeepEqual(got, want) {
+		t.Fatalf("logical index = %#v, want %#v", got, want)
 	}
 }
 
@@ -392,6 +428,32 @@ type cancelingReader struct {
 	cancel           context.CancelFunc
 	readsUntilCancel int
 	readBytes        int
+}
+
+func assertNoOpenFilesInDirectory(t *testing.T, directory string) {
+	t.Helper()
+
+	descriptors, err := os.ReadDir("/proc/self/fd")
+	if err != nil {
+		t.Fatal(err)
+	}
+	prefix := directory + string(os.PathSeparator)
+	var open []string
+	for _, descriptor := range descriptors {
+		target, err := os.Readlink(filepath.Join("/proc/self/fd", descriptor.Name()))
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.HasPrefix(strings.TrimSuffix(target, " (deleted)"), prefix) {
+			open = append(open, target)
+		}
+	}
+	if len(open) != 0 {
+		t.Fatalf("open files in merge directory = %v, want none", open)
+	}
 }
 
 func (r *cancelingReader) Read(buffer []byte) (int, error) {
