@@ -2,6 +2,7 @@ package segment
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -51,14 +52,7 @@ func TestMergeRunPass(t *testing.T) {
 		}),
 	}
 
-	names := []string{"r0", "r1", "r2", "r3"}
-	paths := make([]string, len(runs))
-	for i, run := range runs {
-		paths[i] = filepath.Join(directory, names[i])
-		if err := os.WriteFile(paths[i], run, 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
+	paths := writeMergeTestRuns(t, directory, runs)
 
 	gotPaths, gotStats, err := mergeRunPass(directory, paths, 3, 0)
 	if err != nil {
@@ -102,4 +96,143 @@ func TestMergeRunPass(t *testing.T) {
 	if !reflect.DeepEqual(gotStats, wantStats) {
 		t.Fatalf("statistics = %#v, want %#v", gotStats, wantStats)
 	}
+}
+
+func TestMergeRunsProducesSameBytesAcrossFanIn(t *testing.T) {
+	const runCount = 10
+	runs := make([][]byte, runCount)
+	postings := make([]index.Posting, runCount)
+	for documentID := range runCount {
+		posting := index.Posting{DocumentID: index.DocumentID(documentID), Frequency: 1}
+		postings[documentID] = posting
+		runs[documentID] = encodeMergeTestRun(t, runHeader{
+			firstDocumentID: index.DocumentID(documentID),
+			documentCount:   1,
+		}, []mergeTestTerm{{
+			term:     "shared",
+			postings: []index.Posting{posting},
+		}})
+	}
+	paths := writeMergeTestRuns(t, t.TempDir(), runs)
+
+	want := encodeMergeTestRun(t, runHeader{documentCount: runCount}, []mergeTestTerm{
+		{term: "shared", postings: postings},
+	})
+
+	tests := []struct {
+		name        string
+		fanIn       int
+		groupCounts []int
+	}{
+		{name: "fan-in 2", fanIn: 2, groupCounts: []int{5, 3, 2, 1}},
+		{name: "fan-in 3", fanIn: 3, groupCounts: []int{4, 2, 1}},
+		{name: "one pass", fanIn: 10, groupCounts: []int{1}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			path, stats, err := mergeRuns(t.TempDir(), paths, test.fanIn)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			got, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(got, want) {
+				t.Fatal("final run does not match expected bytes")
+			}
+
+			statIndex := 0
+			for passIndex, groupCount := range test.groupCounts {
+				for groupIndex := range groupCount {
+					if statIndex == len(stats) {
+						t.Fatalf("statistics ended before pass %d group %d", passIndex, groupIndex)
+					}
+					stat := stats[statIndex]
+					if stat.passIndex != passIndex || stat.groupIndex != groupIndex {
+						t.Fatalf("statistics[%d] identifies pass %d group %d, want pass %d group %d", statIndex, stat.passIndex, stat.groupIndex, passIndex, groupIndex)
+					}
+					statIndex++
+				}
+			}
+			if statIndex != len(stats) {
+				t.Fatalf("statistics count = %d, want %d", len(stats), statIndex)
+			}
+		})
+	}
+}
+
+func TestMergeRunsCreatesCanonicalEmptyRun(t *testing.T) {
+	path, stats, err := mergeRuns(t.TempDir(), nil, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stats) != 0 {
+		t.Fatalf("statistics count = %d, want 0", len(stats))
+	}
+
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := encodeMergeTestRun(t, runHeader{}, nil)
+	if !bytes.Equal(got, want) {
+		t.Fatal("empty run does not match canonical bytes")
+	}
+}
+
+func TestMergeRunsValidatesAndAdoptsSoleRun(t *testing.T) {
+	directory := t.TempDir()
+	run := encodeMergeTestRun(t, runHeader{documentCount: 1}, []mergeTestTerm{
+		{term: "apple", postings: []index.Posting{{DocumentID: 0, Frequency: 1}}},
+	})
+	path := writeMergeTestRuns(t, directory, [][]byte{run})[0]
+
+	gotPath, stats, err := mergeRuns(t.TempDir(), []string{path}, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotPath != path {
+		t.Fatalf("adopted path = %q, want %q", gotPath, path)
+	}
+	if len(stats) != 0 {
+		t.Fatalf("statistics count = %d, want 0", len(stats))
+	}
+
+	corruptPath := filepath.Join(directory, "corrupt")
+	if err := os.WriteFile(corruptPath, append(run, 0), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := mergeRuns(t.TempDir(), []string{corruptPath}, 2); err == nil {
+		t.Fatal("mergeRuns() error = nil for corrupt sole run")
+	}
+}
+
+func TestMergeRunsRejectsFanInBeforeCreatingOutput(t *testing.T) {
+	directory := t.TempDir()
+	if _, _, err := mergeRuns(directory, nil, 1); err == nil {
+		t.Fatal("mergeRuns() error = nil")
+	}
+
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("output count = %d, want 0", len(entries))
+	}
+}
+
+func writeMergeTestRuns(t *testing.T, directory string, runs [][]byte) []string {
+	t.Helper()
+
+	paths := make([]string, len(runs))
+	for i, run := range runs {
+		paths[i] = filepath.Join(directory, fmt.Sprintf("r%02d", len(runs)-i))
+		if err := os.WriteFile(paths[i], run, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return paths
 }

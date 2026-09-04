@@ -36,6 +36,38 @@ func planMergePass(paths []string, fanIn int) ([]mergeGroup, error) {
 	return groups, nil
 }
 
+func mergeRuns(directory string, paths []string, fanIn int) (string, []mergeGroupStats, error) {
+	if fanIn < 2 {
+		return "", nil, errors.New("merge fan-in must be at least two")
+	}
+
+	switch len(paths) {
+	case 0:
+		path, err := createEmptyRun(directory)
+		if err != nil {
+			return "", nil, fmt.Errorf("create empty run: %w", err)
+		}
+		return path, nil, nil
+	case 1:
+		if err := validateRunFile(paths[0]); err != nil {
+			return "", nil, fmt.Errorf("validate sole run: %w", err)
+		}
+		return paths[0], nil, nil
+	}
+
+	currentPaths := paths
+	var stats []mergeGroupStats
+	for passIndex := 0; len(currentPaths) > 1; passIndex++ {
+		successors, passStats, err := mergeRunPass(directory, currentPaths, fanIn, passIndex)
+		if err != nil {
+			return "", nil, err
+		}
+		currentPaths = successors
+		stats = append(stats, passStats...)
+	}
+	return currentPaths[0], stats, nil
+}
+
 func mergeRunPass(
 	directory string,
 	paths []string,
@@ -117,4 +149,50 @@ func mergeFileGroup(
 		return "", 0, 0, fmt.Errorf("stat successor run: %w", err)
 	}
 	return outputPath, inputBytes, uint64(info.Size()), nil
+}
+
+func createEmptyRun(directory string) (string, error) {
+	output, err := os.CreateTemp(directory, "merge-empty-*")
+	if err != nil {
+		return "", err
+	}
+	path := output.Name()
+
+	writer, err := newRunWriter(output, runHeader{})
+	if err != nil {
+		return "", err
+	}
+	if err := writer.close(); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+func validateRunFile(path string) (err error) {
+	input, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		err = errors.Join(err, input.Close())
+	}()
+
+	reader, err := newRunReader(input)
+	if err != nil {
+		return err
+	}
+	for {
+		_, postingCount, readErr := reader.nextTerm()
+		if errors.Is(readErr, io.EOF) {
+			return nil
+		}
+		if readErr != nil {
+			return readErr
+		}
+		for range postingCount {
+			if _, readErr := reader.nextPosting(); readErr != nil {
+				return readErr
+			}
+		}
+	}
 }
