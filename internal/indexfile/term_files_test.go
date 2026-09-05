@@ -94,28 +94,14 @@ func TestWriteTermFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	wantTerms := "DSKTERM\x01" +
-		"\x02\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00" +
-		"\x18\x00\x00\x00\x00\x00\x00\x00go" +
-		"\x06\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00" +
-		"\x10\x00\x00\x00\x00\x00\x00\x00search" +
-		"\x02\xaf\x50\xfd"
-	wantPostings := "DSKPOST\x01" +
-		"\x01\x00\x00\x00\x10\x00\x00\x00" +
-		"\x00\x00\x00\x00\x01\x00\x00\x00" +
-		"\x01\x00\x00\x00\x03\x00\x00\x00" +
-		"\x00\x00\x00\x00\x08\x00\x00\x00" +
-		"\x00\x00\x00\x00\x01\x00\x00\x00" +
-		"\xec\x63\x54\x3d"
-
 	tests := []struct {
 		name     string
 		got      []byte
-		want     string
+		want     []byte
 		metadata FileMetadata
 	}{
-		{"terms", terms.Bytes(), wantTerms, metadata.Terms},
-		{"postings", postings.Bytes(), wantPostings, metadata.Postings},
+		{"terms", terms.Bytes(), readGoldenIndexFile(t, TermsFileName), metadata.Terms},
+		{"postings", postings.Bytes(), readGoldenIndexFile(t, PostingsFileName), metadata.Postings},
 	}
 	wantMetadata := []FileMetadata{
 		{Length: 60, Checksum: 0xfd50af02},
@@ -123,7 +109,7 @@ func TestWriteTermFiles(t *testing.T) {
 	}
 	for position, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if !bytes.Equal(test.got, []byte(test.want)) {
+			if !bytes.Equal(test.got, test.want) {
 				t.Fatalf("file = % x, want % x", test.got, test.want)
 			}
 			if test.metadata != wantMetadata[position] {

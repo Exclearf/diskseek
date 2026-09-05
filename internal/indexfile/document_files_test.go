@@ -103,13 +103,13 @@ func TestWriteDocumentFiles(t *testing.T) {
 	tests := []struct {
 		name     string
 		got      []byte
-		want     string
+		want     []byte
 		metadata FileMetadata
 	}{
 		{
 			name: "document lengths",
 			got:  lengths.Bytes(),
-			want: "DSKDLEN\x01\x02\x00\x00\x00\x03\x00\x00\x00\xd4\x8a\xe0\x00",
+			want: readGoldenIndexFile(t, DocumentLengthsFileName),
 			metadata: FileMetadata{
 				Length:   20,
 				Checksum: 0x00e08ad4,
@@ -118,11 +118,7 @@ func TestWriteDocumentFiles(t *testing.T) {
 		{
 			name: "document offsets",
 			got:  offsets.Bytes(),
-			want: "DSKDOFF\x01" +
-				"\x00\x00\x00\x00\x00\x00\x00\x00" +
-				"\x01\x00\x00\x00\x00\x00\x00\x00" +
-				"\x02\x00\x00\x00\x00\x00\x00\x00" +
-				"\x1b\x8a\xed\xfe",
+			want: readGoldenIndexFile(t, DocumentOffsetsFileName),
 			metadata: FileMetadata{
 				Length:   36,
 				Checksum: 0xfeed8a1b,
@@ -131,7 +127,7 @@ func TestWriteDocumentFiles(t *testing.T) {
 		{
 			name: "document data",
 			got:  data.Bytes(),
-			want: "DSKDDAT\x01ab\x02\x66\x22\x20",
+			want: readGoldenIndexFile(t, DocumentDataFileName),
 			metadata: FileMetadata{
 				Length:   14,
 				Checksum: 0x20226602,
@@ -141,7 +137,7 @@ func TestWriteDocumentFiles(t *testing.T) {
 	gotMetadata := []FileMetadata{metadata.Lengths, metadata.Offsets, metadata.Data}
 	for position, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if !bytes.Equal(test.got, []byte(test.want)) {
+			if !bytes.Equal(test.got, test.want) {
 				t.Fatalf("file = % x, want % x", test.got, test.want)
 			}
 			if gotMetadata[position] != test.metadata {
