@@ -14,6 +14,7 @@ import (
 
 	"github.com/Exclearf/diskseek/internal/corpus"
 	"github.com/Exclearf/diskseek/internal/index"
+	"github.com/Exclearf/diskseek/internal/indexfile"
 )
 
 func TestBuildCreatesOwnedArtifacts(t *testing.T) {
@@ -50,6 +51,37 @@ func TestBuildCreatesOwnedArtifacts(t *testing.T) {
 	}
 	if result.stats != wantStats {
 		t.Fatalf("statistics = %+v, want %+v", result.stats, wantStats)
+	}
+}
+
+func TestBuildIndexCreatesIndexAndRemovesTemporaryArtifacts(t *testing.T) {
+	temporaryDirectory := t.TempDir()
+	destination := filepath.Join(t.TempDir(), "index")
+	err := BuildIndex(
+		context.Background(),
+		corpus.NewTSVReader(strings.NewReader("0\ta\n")),
+		destination,
+		BuildOptions{
+			FlushTarget:        1,
+			MergeFanIn:         2,
+			MergeWorkers:       1,
+			Codec:              indexfile.PostingsCodecVByte,
+			TemporaryDirectory: temporaryDirectory,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := indexfile.Verify(context.Background(), destination); err != nil {
+		t.Fatalf("verify built index: %v", err)
+	}
+
+	entries, err := os.ReadDir(temporaryDirectory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("temporary entries = %v, want none", entries)
 	}
 }
 

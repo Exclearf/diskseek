@@ -8,13 +8,53 @@ import (
 	"os"
 
 	"github.com/Exclearf/diskseek/internal/corpus"
+	"github.com/Exclearf/diskseek/internal/indexfile"
 )
+
+type BuildOptions struct {
+	FlushTarget        uint64
+	MergeFanIn         int
+	MergeWorkers       int
+	Codec              indexfile.PostingsCodec
+	TemporaryDirectory string
+}
 
 type buildResult struct {
 	directory     string
 	documentsPath string
 	runPaths      []string
 	stats         buildStats
+}
+
+// BuildIndex builds a new persistent index directory from TSV records.
+func BuildIndex(
+	ctx context.Context,
+	records *corpus.TSVReader,
+	destination string,
+	options BuildOptions,
+) (err error) {
+	result, err := build(ctx, records, options.FlushTarget, options.TemporaryDirectory)
+	if err != nil {
+		return fmt.Errorf("build runs: %w", err)
+	}
+	defer func() {
+		err = errors.Join(err, os.RemoveAll(result.directory))
+	}()
+
+	mergedRun, _, err := mergeRuns(
+		ctx,
+		result.directory,
+		result.runPaths,
+		options.MergeFanIn,
+		options.MergeWorkers,
+	)
+	if err != nil {
+		return fmt.Errorf("merge runs: %w", err)
+	}
+	if err := writeIndex(destination, mergedRun, result.documentsPath, options.Codec); err != nil {
+		return fmt.Errorf("write index: %w", err)
+	}
+	return nil
 }
 
 func build(
