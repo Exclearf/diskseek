@@ -57,6 +57,10 @@ func (c *Cursor) Current() (index.Posting, bool) {
 	return c.postings[c.blockPosition], true
 }
 
+func (c *Cursor) DocumentFrequency() uint64 {
+	return c.term.documentFrequency
+}
+
 func (c *Cursor) Stats() CursorStats {
 	return c.stats
 }

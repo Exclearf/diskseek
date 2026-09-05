@@ -23,6 +23,14 @@ type Index struct {
 	documentDataBodyBytes    uint64
 }
 
+func (i *Index) DocumentsWithTerms() uint64 {
+	return i.documentsWithTerms
+}
+
+func (i *Index) AverageDocumentLength() float64 {
+	return i.averageDocumentLength
+}
+
 type indexFile interface {
 	io.Reader
 	io.ReaderAt
