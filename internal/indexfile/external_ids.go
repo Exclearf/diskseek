@@ -79,3 +79,38 @@ func readExternalIDs(
 	}
 	return nil
 }
+
+func verifyExternalIDFiles(
+	offsetInput io.Reader,
+	offsetSize int64,
+	dataInput io.Reader,
+	dataSize int64,
+	documentCount uint64,
+) error {
+	offsets, err := newFileReader(offsetInput, offsetSize, documentOffsetsRole)
+	if err != nil {
+		return err
+	}
+	data, err := newFileReader(dataInput, dataSize, documentDataRole)
+	if err != nil {
+		return err
+	}
+
+	if err := readExternalIDs(
+		offsets,
+		data,
+		documentCount,
+		uint64(offsets.body.N),
+		uint64(data.body.N),
+		func(string) error { return nil },
+	); err != nil {
+		return fmt.Errorf("verify external document IDs: %w", err)
+	}
+	if err := offsets.finish(); err != nil {
+		return fmt.Errorf("finish document offsets: %w", err)
+	}
+	if err := data.finish(); err != nil {
+		return fmt.Errorf("finish document data: %w", err)
+	}
+	return nil
+}

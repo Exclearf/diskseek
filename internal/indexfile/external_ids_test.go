@@ -41,6 +41,68 @@ func TestReadDocumentOffsetRejectsTruncatedValue(t *testing.T) {
 	}
 }
 
+func TestVerifyExternalIDFiles(t *testing.T) {
+	tests := []struct {
+		name          string
+		offsets       []uint64
+		data          string
+		documentCount uint64
+	}{
+		{name: "empty", offsets: []uint64{0}},
+		{name: "documents", offsets: []uint64{0, 1, 3}, data: "abc", documentCount: 2},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			offsets, data := writeExternalIDTestFiles(t, test.offsets, test.data)
+			if err := verifyExternalIDFiles(
+				bytes.NewReader(offsets), int64(len(offsets)),
+				bytes.NewReader(data), int64(len(data)),
+				test.documentCount,
+			); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestVerifyExternalIDFilesRejectsMismatch(t *testing.T) {
+	t.Run("document count", func(t *testing.T) {
+		offsets, data := writeExternalIDTestFiles(t, []uint64{0, 1, 3}, "abc")
+		if err := verifyExternalIDFiles(
+			bytes.NewReader(offsets), int64(len(offsets)),
+			bytes.NewReader(data), int64(len(data)),
+			1,
+		); err == nil {
+			t.Fatal("verifyExternalIDFiles() error = nil")
+		}
+	})
+
+	t.Run("offset checksum", func(t *testing.T) {
+		offsets, data := writeExternalIDTestFiles(t, []uint64{0, 1, 3}, "abc")
+		offsets[fileHeaderBytes+documentOffsetBytes] = 2
+		if err := verifyExternalIDFiles(
+			bytes.NewReader(offsets), int64(len(offsets)),
+			bytes.NewReader(data), int64(len(data)),
+			2,
+		); err == nil {
+			t.Fatal("verifyExternalIDFiles() error = nil")
+		}
+	})
+
+	t.Run("data checksum", func(t *testing.T) {
+		offsets, data := writeExternalIDTestFiles(t, []uint64{0, 1, 3}, "abc")
+		data[fileHeaderBytes] = 'z'
+		if err := verifyExternalIDFiles(
+			bytes.NewReader(offsets), int64(len(offsets)),
+			bytes.NewReader(data), int64(len(data)),
+			2,
+		); err == nil {
+			t.Fatal("verifyExternalIDFiles() error = nil")
+		}
+	})
+}
+
 func TestReadExternalIDs(t *testing.T) {
 	offsets := encodeDocumentOffsets(t, 0, 1, 2)
 	var got []string
@@ -158,4 +220,10 @@ func encodeDocumentOffsets(t *testing.T, offsets ...uint64) []byte {
 		}
 	}
 	return encoded.Bytes()
+}
+
+func writeExternalIDTestFiles(t *testing.T, offsets []uint64, data string) ([]byte, []byte) {
+	t.Helper()
+	return writeIndexFileTestData(t, documentOffsetsRole, encodeDocumentOffsets(t, offsets...)),
+		writeIndexFileTestData(t, documentDataRole, []byte(data))
 }
