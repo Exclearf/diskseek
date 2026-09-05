@@ -3,6 +3,7 @@ package indexfile
 import (
 	"bytes"
 	"io"
+	"slices"
 	"testing"
 
 	"github.com/Exclearf/diskseek/internal/index"
@@ -55,7 +56,13 @@ func TestWriteTermBodiesRecordsWrittenPostingLengths(t *testing.T) {
 	}}
 
 	var termBody, postingBody bytes.Buffer
-	if err := writeTermBodies(&termBody, &postingBody, source.nextTerm, source.nextPosting); err != nil {
+	if err := writeTermBodies(
+		&termBody,
+		&postingBody,
+		PostingsCodecRaw,
+		source.nextTerm,
+		source.nextPosting,
+	); err != nil {
 		t.Fatal(err)
 	}
 
@@ -65,6 +72,67 @@ func TestWriteTermBodiesRecordsWrittenPostingLengths(t *testing.T) {
 	}
 	if postingBody.Len() != 40 {
 		t.Fatalf("posting body length = %d, want 40", postingBody.Len())
+	}
+}
+
+func TestWriteTermBodiesSelectsVBytePostings(t *testing.T) {
+	want := []index.Posting{
+		{DocumentID: 0, Frequency: 1},
+		{DocumentID: 129, Frequency: 2},
+	}
+	source := termTestSource{terms: []termTestTerm{{term: "go", postings: want}}}
+
+	var termBody, postingBody bytes.Buffer
+	if err := writeTermBodies(
+		&termBody,
+		&postingBody,
+		PostingsCodecVByte,
+		source.nextTerm,
+		source.nextPosting,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	record, err := readTermRecord(
+		bytes.NewReader(termBody.Bytes()),
+		uint64(termBody.Len()),
+		2,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.postingsBytes != uint64(postingBody.Len()) {
+		t.Fatalf("recorded postings bytes = %d, want %d", record.postingsBytes, postingBody.Len())
+	}
+
+	var got []index.Posting
+	if err := readVBytePostingList(
+		bytes.NewReader(postingBody.Bytes()),
+		uint64(len(want)),
+		record.postingsBytes,
+		130,
+		func(posting index.Posting) error {
+			got = append(got, posting)
+			return nil
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("postings = %v, want %v", got, want)
+	}
+}
+
+func TestWriteTermBodiesRejectsUnsupportedCodec(t *testing.T) {
+	err := writeTermBodies(
+		io.Discard,
+		io.Discard,
+		PostingsCodec(3),
+		func() (string, uint64, error) { return "", 0, io.EOF },
+		func() (index.Posting, error) { return index.Posting{}, io.EOF },
+	)
+	if err == nil {
+		t.Fatal("writeTermBodies() error = nil")
 	}
 }
 
@@ -92,6 +160,9 @@ func TestWriteTermFiles(t *testing.T) {
 	)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if metadata.Codec != PostingsCodecRaw {
+		t.Fatalf("postings codec = %d, want %d", metadata.Codec, PostingsCodecRaw)
 	}
 
 	tests := []struct {

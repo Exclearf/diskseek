@@ -17,9 +17,14 @@ type TermFilesMetadata struct {
 func writeTermBodies(
 	terms io.Writer,
 	postings io.Writer,
+	codec PostingsCodec,
 	nextTerm func() (string, uint64, error),
 	nextPosting func() (index.Posting, error),
 ) error {
+	if !codec.supported() {
+		return fmt.Errorf("unsupported postings codec ID %d", codec)
+	}
+
 	for {
 		term, documentFrequency, err := nextTerm()
 		if errors.Is(err, io.EOF) {
@@ -29,7 +34,12 @@ func writeTermBodies(
 			return fmt.Errorf("read term: %w", err)
 		}
 
-		postingsBytes, err := writeRawPostingList(postings, documentFrequency, nextPosting)
+		var postingsBytes uint64
+		if codec == PostingsCodecRaw {
+			postingsBytes, err = writeRawPostingList(postings, documentFrequency, nextPosting)
+		} else {
+			postingsBytes, err = writeVBytePostingList(postings, documentFrequency, nextPosting)
+		}
 		if err != nil {
 			return fmt.Errorf("write %q postings: %w", term, err)
 		}
@@ -58,7 +68,7 @@ func WriteTermFiles(
 		return TermFilesMetadata{}, err
 	}
 
-	if err := writeTermBodies(terms, postings, nextTerm, nextPosting); err != nil {
+	if err := writeTermBodies(terms, postings, PostingsCodecRaw, nextTerm, nextPosting); err != nil {
 		return TermFilesMetadata{}, err
 	}
 	postingMetadata, err := postings.finish()
