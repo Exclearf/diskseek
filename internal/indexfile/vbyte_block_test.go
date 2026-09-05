@@ -2,6 +2,7 @@ package indexfile
 
 import (
 	"bytes"
+	"encoding/binary"
 	"math"
 	"slices"
 	"testing"
@@ -15,12 +16,7 @@ const vBytePostingPayloadFixture = "\x80\x81" +
 	"\x05\xb7\x81"
 
 func TestVBytePostingPayloadBytes(t *testing.T) {
-	want := []index.Posting{
-		{DocumentID: 0, Frequency: 1},
-		{DocumentID: 1, Frequency: 3},
-		{DocumentID: 129, Frequency: 2},
-		{DocumentID: 824, Frequency: 1},
-	}
+	want := vBytePostingFixturePostings()
 
 	var encoded [maxVBytePostingPayloadBytes]byte
 	encodedBytes, err := encodeVBytePostingPayload(encoded[:], want)
@@ -37,6 +33,74 @@ func TestVBytePostingPayloadBytes(t *testing.T) {
 	}
 	if !slices.Equal(got, want) {
 		t.Fatalf("postings = %+v, want %+v", got, want)
+	}
+}
+
+func TestVBytePostingBlock(t *testing.T) {
+	want := vBytePostingFixturePostings()
+	var encoded bytes.Buffer
+	if err := writeVBytePostingBlock(&encoded, want); err != nil {
+		t.Fatal(err)
+	}
+
+	if got, want := encoded.Len(), postingBlockHeaderBytes+len(vBytePostingPayloadFixture); got != want {
+		t.Fatalf("block length = %d, want %d", got, want)
+	}
+	if got := binary.LittleEndian.Uint32(encoded.Bytes()[0:4]); got != 824 {
+		t.Fatalf("block endpoint = %d, want 824", got)
+	}
+	if got, want := binary.LittleEndian.Uint32(encoded.Bytes()[4:8]), uint32(len(vBytePostingPayloadFixture)); got != want {
+		t.Fatalf("payload length = %d, want %d", got, want)
+	}
+
+	got, err := readVBytePostingBlock(bytes.NewReader(encoded.Bytes()), len(want), 825)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("postings = %+v, want %+v", got, want)
+	}
+}
+
+func TestReadVBytePostingBlockRejectsInvalidEnvelope(t *testing.T) {
+	var encoded bytes.Buffer
+	if err := writeVBytePostingBlock(&encoded, vBytePostingFixturePostings()); err != nil {
+		t.Fatal(err)
+	}
+	valid := encoded.Bytes()
+
+	shortPayloadLength := slices.Clone(valid)
+	binary.LittleEndian.PutUint32(shortPayloadLength[4:8], 7)
+
+	longPayloadLength := slices.Clone(valid)
+	binary.LittleEndian.PutUint32(longPayloadLength[4:8], 41)
+
+	wrongEndpoint := slices.Clone(valid)
+	binary.LittleEndian.PutUint32(wrongEndpoint[0:4], 823)
+
+	tests := []struct {
+		name           string
+		data           []byte
+		totalDocuments uint64
+	}{
+		{name: "truncated header", data: valid[:postingBlockHeaderBytes-1], totalDocuments: 825},
+		{name: "short payload length", data: shortPayloadLength, totalDocuments: 825},
+		{name: "long payload length", data: longPayloadLength, totalDocuments: 825},
+		{name: "out-of-range endpoint", data: valid, totalDocuments: 824},
+		{name: "wrong endpoint", data: wrongEndpoint, totalDocuments: 825},
+		{name: "truncated payload", data: valid[:len(valid)-1], totalDocuments: 825},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := readVBytePostingBlock(
+				bytes.NewReader(test.data),
+				len(vBytePostingFixturePostings()),
+				test.totalDocuments,
+			); err == nil {
+				t.Fatal("readVBytePostingBlock() error = nil")
+			}
+		})
 	}
 }
 
@@ -153,4 +217,13 @@ func FuzzVBytePostingPayloadRoundTrip(f *testing.F) {
 			t.Fatalf("postings = %+v, want %+v", got, want)
 		}
 	})
+}
+
+func vBytePostingFixturePostings() []index.Posting {
+	return []index.Posting{
+		{DocumentID: 0, Frequency: 1},
+		{DocumentID: 1, Frequency: 3},
+		{DocumentID: 129, Frequency: 2},
+		{DocumentID: 824, Frequency: 1},
+	}
 }
