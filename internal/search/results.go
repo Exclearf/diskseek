@@ -10,6 +10,7 @@ import (
 
 type result struct {
 	DocumentID index.DocumentID
+	ExternalID string
 	Score      float64
 }
 

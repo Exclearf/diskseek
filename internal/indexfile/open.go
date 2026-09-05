@@ -7,6 +7,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+
+	"github.com/Exclearf/diskseek/internal/index"
 )
 
 type Index struct {
@@ -29,6 +31,10 @@ func (i *Index) DocumentsWithTerms() uint64 {
 
 func (i *Index) AverageDocumentLength() float64 {
 	return i.averageDocumentLength
+}
+
+func (i *Index) DocumentLength(documentID index.DocumentID) uint32 {
+	return i.documentLengths[documentID]
 }
 
 type indexFile interface {
