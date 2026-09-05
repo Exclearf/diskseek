@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"math"
 )
 
 const (
@@ -17,7 +18,7 @@ const (
 	metadataFileBytes                      = fileHeaderBytes + metadataBodyBytes + fileFooterBytes
 	minimumFileBytes                       = fileHeaderBytes + fileFooterBytes
 	minimumDocumentOffsetsFileBytes        = minimumFileBytes + documentOffsetBytes
-	maximumFileBytes                uint64 = 1<<63 - 1
+	maximumFileBytes                uint64 = math.MaxInt64
 )
 
 type indexMetadata struct {

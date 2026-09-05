@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"math"
 )
 
 const documentLengthBytes = 4
@@ -45,7 +44,7 @@ func readDocumentLengths(input io.Reader, size int64) (documentLengths, error) {
 	}
 
 	documentCount := uint64(reader.body.N / documentLengthBytes)
-	if documentCount > maxDocumentCount || documentCount > math.MaxInt {
+	if documentCount > maxDocumentCount {
 		return documentLengths{}, fmt.Errorf("unsupported document count %d", documentCount)
 	}
 

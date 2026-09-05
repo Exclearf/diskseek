@@ -163,6 +163,9 @@ func TestPersistentIndexDoesNotDependOnSegmentLayout(t *testing.T) {
 	if !maps.EqualFunc(readIndexDirectory(t, oneRun), readIndexDirectory(t, multipass), bytes.Equal) {
 		t.Fatal("persistent index directories differ")
 	}
+	if err := indexfile.Verify(context.Background(), oneRun); err != nil {
+		t.Fatalf("verify persistent index: %v", err)
+	}
 }
 
 func buildPersistentTestIndex(t *testing.T, input []byte, flushTarget uint64) (string, int) {

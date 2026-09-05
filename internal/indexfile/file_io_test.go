@@ -3,6 +3,7 @@ package indexfile
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"hash/crc32"
 	"io"
 	"testing"
@@ -90,4 +91,23 @@ func TestFileWriterChecksumCoverage(t *testing.T) {
 	if metadata.Checksum != stored || stored != recomputed {
 		t.Fatalf("checksums: returned=%08x stored=%08x recomputed=%08x", metadata.Checksum, stored, recomputed)
 	}
+}
+
+func TestFileWriterReturnsFlushError(t *testing.T) {
+	want := errors.New("write failed")
+	writer, err := newFileWriter(errorWriter{err: want}, termsRole)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := writer.finish(); !errors.Is(err, want) {
+		t.Fatalf("finish() error = %v, want %v", err, want)
+	}
+}
+
+type errorWriter struct {
+	err error
+}
+
+func (w errorWriter) Write([]byte) (int, error) {
+	return 0, w.err
 }

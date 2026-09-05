@@ -12,33 +12,21 @@ import (
 	"github.com/Exclearf/diskseek/internal/index"
 )
 
-func TestVerifyIndex(t *testing.T) {
-	t.Run("empty", func(t *testing.T) {
-		directory := writeVerificationTestIndex(t, nil, nil)
-		if err := verifyIndex(context.Background(), directory); err != nil {
-			t.Fatal(err)
-		}
-	})
-
-	t.Run("documents", func(t *testing.T) {
-		directory := writeVerificationTestIndex(t, []index.DocumentMeta{
-			{ExternalID: "a", Length: 2},
-			{ExternalID: "b", Length: 3},
-		}, verificationTestTerms())
-		if err := verifyIndex(context.Background(), directory); err != nil {
-			t.Fatal(err)
-		}
-	})
+func TestVerifyEmptyIndex(t *testing.T) {
+	directory := writeVerificationTestIndex(t, nil, nil)
+	if err := Verify(context.Background(), directory); err != nil {
+		t.Fatal(err)
+	}
 }
 
-func TestVerifyIndexRejectsCrossFileMismatch(t *testing.T) {
+func TestVerifyRejectsCrossFileMismatch(t *testing.T) {
 	t.Run("document lengths and postings", func(t *testing.T) {
 		directory := writeVerificationTestIndex(t, []index.DocumentMeta{
 			{ExternalID: "a", Length: 1},
 			{ExternalID: "b", Length: 4},
 		}, verificationTestTerms())
-		if err := verifyIndex(context.Background(), directory); err == nil {
-			t.Fatal("verifyIndex() error = nil")
+		if err := Verify(context.Background(), directory); err == nil {
+			t.Fatal("Verify() error = nil")
 		}
 	})
 
@@ -48,18 +36,18 @@ func TestVerifyIndexRejectsCrossFileMismatch(t *testing.T) {
 			{ExternalID: "b", Length: 3},
 		}, verificationTestTerms())
 		replaceExternalIDFiles(t, directory, []index.DocumentMeta{{ExternalID: "a"}})
-		if err := verifyIndex(context.Background(), directory); err == nil {
-			t.Fatal("verifyIndex() error = nil")
+		if err := Verify(context.Background(), directory); err == nil {
+			t.Fatal("Verify() error = nil")
 		}
 	})
 }
 
-func TestVerifyIndexCancellation(t *testing.T) {
+func TestVerifyCancellation(t *testing.T) {
 	directory := writeVerificationTestIndex(t, nil, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if err := verifyIndex(ctx, directory); !errors.Is(err, context.Canceled) {
-		t.Fatalf("verifyIndex() error = %v, want context.Canceled", err)
+	if err := Verify(ctx, directory); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Verify() error = %v, want context.Canceled", err)
 	}
 }
 

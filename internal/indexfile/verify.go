@@ -9,7 +9,8 @@ import (
 	"path/filepath"
 )
 
-func verifyIndex(ctx context.Context, directory string) (err error) {
+// Verify validates every file and posting in an index directory.
+func Verify(ctx context.Context, directory string) (err error) {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
