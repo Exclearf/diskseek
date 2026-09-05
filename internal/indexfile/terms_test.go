@@ -3,6 +3,7 @@ package indexfile
 import (
 	"bytes"
 	"encoding/binary"
+	"math"
 	"testing"
 )
 
@@ -11,6 +12,13 @@ var goTermRecord = []byte{
 	0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 	0x18, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 	'g', 'o',
+}
+
+var yakTermRecord = []byte{
+	0x03, 0x00, 0x00, 0x00,
+	0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	'y', 'a', 'k',
 }
 
 func TestWriteTermRecordBytes(t *testing.T) {
@@ -81,6 +89,66 @@ func TestReadTermRecordRejectsInvalidData(t *testing.T) {
 				bytes.NewReader(test.data), test.remainingBytes, test.totalDocuments,
 			); err == nil {
 				t.Fatal("readTermRecord returned nil error")
+			}
+		})
+	}
+}
+
+func TestReadTermsDerivesPostingsRanges(t *testing.T) {
+	body := append(append([]byte(nil), goTermRecord...), yakTermRecord...)
+	terms, err := readTerms(bytes.NewReader(body), uint64(len(body)), 40, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := map[string]termEntry{
+		"go":  {documentFrequency: 2, postingsOffset: 8, postingsBytes: 24},
+		"yak": {documentFrequency: 1, postingsOffset: 32, postingsBytes: 16},
+	}
+	if len(terms) != len(want) {
+		t.Fatalf("term count = %d, want %d", len(terms), len(want))
+	}
+	for term, wantEntry := range want {
+		if terms[term] != wantEntry {
+			t.Fatalf("entry for %q = %+v, want %+v", term, terms[term], wantEntry)
+		}
+	}
+}
+
+func TestReadTermsEmpty(t *testing.T) {
+	terms, err := readTerms(bytes.NewReader(nil), 0, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(terms) != 0 {
+		t.Fatalf("term count = %d, want 0", len(terms))
+	}
+}
+
+func TestReadTermsRejectsInvalidSequence(t *testing.T) {
+	duplicate := append(append([]byte(nil), goTermRecord...), goTermRecord...)
+	decreasing := append(append([]byte(nil), yakTermRecord...), goTermRecord...)
+
+	wrappedRange := append(append([]byte(nil), goTermRecord...), yakTermRecord...)
+	binary.LittleEndian.PutUint64(wrappedRange[12:20], math.MaxUint64)
+	binary.LittleEndian.PutUint64(wrappedRange[len(goTermRecord)+12:], 24)
+
+	tests := map[string]struct {
+		body          []byte
+		postingsBytes uint64
+	}{
+		"duplicate term":          {duplicate, 48},
+		"decreasing term":         {decreasing, 40},
+		"wrapped postings ranges": {wrappedRange, 23},
+		"unreferenced postings":   {goTermRecord, 25},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			if _, err := readTerms(
+				bytes.NewReader(test.body), uint64(len(test.body)), test.postingsBytes, 2,
+			); err == nil {
+				t.Fatal("readTerms returned nil error")
 			}
 		})
 	}
