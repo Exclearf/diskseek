@@ -44,10 +44,10 @@ func TestReferenceSearch(t *testing.T) {
 			},
 		},
 		{
-			name:  "truncation",
-			query: "search fast",
+			name:  "higher score wins top k",
+			query: "fast disk",
 			k:     1,
-			want:  []result{{DocumentID: 0, Score: 1.897119984885881}},
+			want:  []result{{DocumentID: 2, Score: 1.822747671887871}},
 		},
 		{name: "zero k", query: "fast", k: 0},
 		{name: "empty query", query: "---", k: 10},

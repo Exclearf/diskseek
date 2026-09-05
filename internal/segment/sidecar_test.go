@@ -86,6 +86,12 @@ func TestDocumentReaderRejectsInvalidData(t *testing.T) {
 		{name: "truncated document", corrupt: func(data []byte) []byte {
 			return data[:15]
 		}},
+		{name: "missing external ID", corrupt: func(data []byte) []byte {
+			return data[:12]
+		}},
+		{name: "missing document length", corrupt: func(data []byte) []byte {
+			return data[:14]
+		}},
 		{name: "missing end marker", corrupt: func(data []byte) []byte {
 			return data[:len(data)-4]
 		}},
@@ -97,8 +103,8 @@ func TestDocumentReaderRejectsInvalidData(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			data := append([]byte(nil), valid...)
-			if _, err := decodeDocuments(test.corrupt(data)); err == nil {
-				t.Fatal("decodeDocuments() error = nil")
+			if _, err := decodeDocuments(test.corrupt(data)); err == nil || errors.Is(err, io.EOF) {
+				t.Fatalf("decodeDocuments() error = %v, want non-EOF error", err)
 			}
 		})
 	}

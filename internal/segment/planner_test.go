@@ -352,6 +352,44 @@ func TestMergeRunsValidatesAndAdoptsSoleRun(t *testing.T) {
 	}
 }
 
+func TestMergeRunsRejectsTruncationWithoutChangingSources(t *testing.T) {
+	run := encodeMergeTestRun(t, runHeader{documentCount: 1}, []mergeTestTerm{
+		{term: "a", postings: []index.Posting{{DocumentID: 0, Frequency: 1}}},
+		{term: "b", postings: []index.Posting{{DocumentID: 0, Frequency: 1}}},
+	})
+	nextRun := encodeMergeTestRun(t, runHeader{firstDocumentID: 1, documentCount: 1}, []mergeTestTerm{
+		{term: "c", postings: []index.Posting{{DocumentID: 1, Frequency: 1}}},
+	})
+	for _, runCount := range []int{1, 2} {
+		for length := runHeaderBytes; length < len(run); length++ {
+			t.Run(fmt.Sprintf("%d runs/%d bytes", runCount, length), func(t *testing.T) {
+				directory := t.TempDir()
+				inputs := [][]byte{run[:length], nextRun}[:runCount]
+				paths := writeMergeTestRuns(t, directory, inputs)
+				if _, _, err := mergeRuns(context.Background(), directory, paths, 2, 1); err == nil {
+					t.Fatal("mergeRuns() accepted a truncated run")
+				}
+				for i, path := range paths {
+					got, err := os.ReadFile(path)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if !bytes.Equal(got, inputs[i]) {
+						t.Fatalf("source %q changed after failure", path)
+					}
+				}
+				entries, err := os.ReadDir(directory)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(entries) != len(paths) {
+					t.Fatalf("directory entries = %d, want only %d sources", len(entries), len(paths))
+				}
+			})
+		}
+	}
+}
+
 func TestValidateRunStopsDuringHotTermWhenCanceled(t *testing.T) {
 	data := encodeHotTermRun(t, 0, 1<<16)
 	ctx, cancel := context.WithCancel(context.Background())

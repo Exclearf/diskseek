@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 	"testing"
+	"testing/synctest"
 )
 
 func TestRunMergeGroupsOrdersOutOfOrderResults(t *testing.T) {
@@ -39,29 +40,32 @@ func TestRunMergeGroupsOrdersOutOfOrderResults(t *testing.T) {
 }
 
 func TestRunMergeGroupsLimitsConcurrentGroups(t *testing.T) {
-	groups := []mergeGroup{{groupIndex: 0}, {groupIndex: 1}, {groupIndex: 2}}
-	started := make(chan int, len(groups))
-	release := make(chan struct{})
-	done := make(chan struct{})
+	synctest.Test(t, func(t *testing.T) {
+		groups := []mergeGroup{{groupIndex: 0}, {groupIndex: 1}, {groupIndex: 2}}
+		started := make(chan int, len(groups))
+		release := make(chan struct{})
+		done := make(chan struct{})
 
-	go func() {
-		runMergeGroups(context.Background(), groups, 2, func(_ context.Context, group mergeGroup) (string, uint64, uint64, error) {
-			started <- group.groupIndex
-			<-release
-			return "", 0, 0, nil
-		})
-		close(done)
-	}()
+		go func() {
+			runMergeGroups(context.Background(), groups, 2, func(_ context.Context, group mergeGroup) (string, uint64, uint64, error) {
+				started <- group.groupIndex
+				<-release
+				return "", 0, 0, nil
+			})
+			close(done)
+		}()
 
-	<-started
-	<-started
-	select {
-	case groupIndex := <-started:
-		t.Errorf("group %d started above the worker limit", groupIndex)
-	default:
-	}
-	close(release)
-	<-done
+		<-started
+		<-started
+		synctest.Wait()
+		select {
+		case groupIndex := <-started:
+			t.Errorf("group %d started above the worker limit", groupIndex)
+		default:
+		}
+		close(release)
+		<-done
+	})
 }
 
 func TestRunMergeGroupsCancelsActiveSiblingAfterError(t *testing.T) {

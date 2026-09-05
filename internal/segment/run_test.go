@@ -111,6 +111,7 @@ func TestReadRunTermHeaderRejectsInvalidData(t *testing.T) {
 		data []byte
 	}{
 		{name: "oversized term", data: oversized},
+		{name: "missing term", data: []byte{1, 0, 0, 0}},
 		{name: "truncated term", data: []byte{2, 0, 0, 0, 'g'}},
 		{name: "invalid UTF-8", data: append([]byte{1, 0, 0, 0, 0xff, 1}, make([]byte, 7)...)},
 		{name: "truncated posting count", data: []byte{1, 0, 0, 0, 'a'}},
@@ -120,8 +121,8 @@ func TestReadRunTermHeaderRejectsInvalidData(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if _, _, err := readRunTermHeader(bytes.NewReader(test.data), runHeader{documentCount: 1}); err == nil {
-				t.Fatal("readRunTermHeader() error = nil")
+			if _, _, err := readRunTermHeader(bytes.NewReader(test.data), runHeader{documentCount: 1}); err == nil || errors.Is(err, io.EOF) {
+				t.Fatalf("readRunTermHeader() error = %v, want non-EOF error", err)
 			}
 		})
 	}
