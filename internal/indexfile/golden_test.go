@@ -78,12 +78,12 @@ func TestVerifyGoldenIndexRejectsBitFlip(t *testing.T) {
 		{"file role", TermsFileName, 0, 1},
 		{"format version", TermsFileName, 7, 1},
 		{"metadata body", MetadataFileName, 24, 1},
-		{"term body", TermsFileName, 28, 1},
+		{"term body", TermsFileName, 32, 1},
 		{"posting body", PostingsFileName, 20, 1},
 		{"document-length body", DocumentLengthsFileName, 8, 1},
 		{"document-offset body", DocumentOffsetsFileName, 16, 1},
 		{"external-ID body", DocumentDataFileName, 8, 1},
-		{"file footer", TermsFileName, 59, 1},
+		{"file footer", TermsFileName, 67, 1},
 	}
 
 	for _, test := range tests {
@@ -134,8 +134,9 @@ func TestVerifyGoldenIndexRejectsChecksumValidDataMutation(t *testing.T) {
 		{"term length", TermsFileName, 8, 1, 24},
 		{"document frequency", TermsFileName, 12, 1, 24},
 		{"postings length", TermsFileName, 20, 1, 24},
-		{"term UTF-8", TermsFileName, 28, 0x80, 24},
-		{"term order", TermsFileName, 28, 0x10, 24},
+		{"maximum term frequency", TermsFileName, 28, 1, 24},
+		{"term UTF-8", TermsFileName, 32, 0x80, 24},
+		{"term order", TermsFileName, 32, 0x10, 24},
 		{"block endpoint", PostingsFileName, 8, 1, 36},
 		{"block payload length", PostingsFileName, 12, 1, 36},
 		{"posting document ID", PostingsFileName, 16, 1, 36},

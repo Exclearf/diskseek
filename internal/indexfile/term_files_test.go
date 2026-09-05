@@ -78,6 +78,7 @@ func TestWriteTermBodiesRecordsWrittenPostingLengths(t *testing.T) {
 func TestWriteTermBodiesSelectsVBytePostings(t *testing.T) {
 	want := []index.Posting{
 		{DocumentID: 0, Frequency: 1},
+		{DocumentID: 1, Frequency: 3},
 		{DocumentID: 129, Frequency: 2},
 	}
 	source := termTestSource{terms: []termTestTerm{{term: "go", postings: want}}}
@@ -96,13 +97,16 @@ func TestWriteTermBodiesSelectsVBytePostings(t *testing.T) {
 	record, err := readTermRecord(
 		bytes.NewReader(termBody.Bytes()),
 		uint64(termBody.Len()),
-		2,
+		3,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if record.postingsBytes != uint64(postingBody.Len()) {
 		t.Fatalf("recorded postings bytes = %d, want %d", record.postingsBytes, postingBody.Len())
+	}
+	if record.maxTermFrequency != 3 {
+		t.Fatalf("maximum term frequency = %d, want 3", record.maxTermFrequency)
 	}
 
 	var got []index.Posting
@@ -188,11 +192,11 @@ func TestPostingCodecSizeEvidence(t *testing.T) {
 			count: 8,
 			raw: codecSize{
 				payloadBytes: 64, blockHeaderBytes: 8, postingsFileBytes: 84,
-				termBytes: 36, documentBytes: 148, metadataBytes: 80, wholeIndexBytes: 348,
+				termBytes: 40, documentBytes: 148, metadataBytes: 80, wholeIndexBytes: 352,
 			},
 			vbyte: codecSize{
 				payloadBytes: 16, blockHeaderBytes: 8, postingsFileBytes: 36,
-				termBytes: 36, documentBytes: 148, metadataBytes: 80, wholeIndexBytes: 300,
+				termBytes: 40, documentBytes: 148, metadataBytes: 80, wholeIndexBytes: 304,
 			},
 		},
 		{
@@ -200,11 +204,11 @@ func TestPostingCodecSizeEvidence(t *testing.T) {
 			count: 128,
 			raw: codecSize{
 				payloadBytes: 1024, blockHeaderBytes: 8, postingsFileBytes: 1044,
-				termBytes: 36, documentBytes: 1708, metadataBytes: 80, wholeIndexBytes: 2868,
+				termBytes: 40, documentBytes: 1708, metadataBytes: 80, wholeIndexBytes: 2872,
 			},
 			vbyte: codecSize{
 				payloadBytes: 256, blockHeaderBytes: 8, postingsFileBytes: 276,
-				termBytes: 36, documentBytes: 1708, metadataBytes: 80, wholeIndexBytes: 2100,
+				termBytes: 40, documentBytes: 1708, metadataBytes: 80, wholeIndexBytes: 2104,
 			},
 		},
 		{
@@ -212,11 +216,11 @@ func TestPostingCodecSizeEvidence(t *testing.T) {
 			count: 4096,
 			raw: codecSize{
 				payloadBytes: 32768, blockHeaderBytes: 256, postingsFileBytes: 33036,
-				termBytes: 36, documentBytes: 53292, metadataBytes: 80, wholeIndexBytes: 86444,
+				termBytes: 40, documentBytes: 53292, metadataBytes: 80, wholeIndexBytes: 86448,
 			},
 			vbyte: codecSize{
 				payloadBytes: 8223, blockHeaderBytes: 256, postingsFileBytes: 8491,
-				termBytes: 36, documentBytes: 53292, metadataBytes: 80, wholeIndexBytes: 61899,
+				termBytes: 40, documentBytes: 53292, metadataBytes: 80, wholeIndexBytes: 61903,
 			},
 		},
 	}

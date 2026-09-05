@@ -11,6 +11,7 @@ var goTermRecord = []byte{
 	0x02, 0x00, 0x00, 0x00,
 	0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 	0x18, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	0x03, 0x00, 0x00, 0x00,
 	'g', 'o',
 }
 
@@ -18,6 +19,7 @@ var yakTermRecord = []byte{
 	0x03, 0x00, 0x00, 0x00,
 	0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 	0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	0x01, 0x00, 0x00, 0x00,
 	'y', 'a', 'k',
 }
 
@@ -27,6 +29,7 @@ func TestWriteTermRecordBytes(t *testing.T) {
 		term:              "go",
 		documentFrequency: 2,
 		postingsBytes:     24,
+		maxTermFrequency:  3,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +46,12 @@ func TestReadTermRecord(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := termRecord{term: "go", documentFrequency: 2, postingsBytes: 24}
+	want := termRecord{
+		term:              "go",
+		documentFrequency: 2,
+		postingsBytes:     24,
+		maxTermFrequency:  3,
+	}
 	if record != want {
 		t.Fatalf("term record = %+v, want %+v", record, want)
 	}
@@ -58,15 +66,19 @@ func TestReadTermRecordRejectsInvalidData(t *testing.T) {
 	binary.LittleEndian.PutUint32(oversizedTermLength[:4], oversizedLength)
 	binary.LittleEndian.PutUint64(oversizedTermLength[4:12], 2)
 	binary.LittleEndian.PutUint64(oversizedTermLength[12:20], 24)
+	binary.LittleEndian.PutUint32(oversizedTermLength[20:24], 3)
 
 	invalidUTF8 := append([]byte(nil), goTermRecord...)
-	invalidUTF8[20] = 0xff
+	invalidUTF8[termRecordHeaderBytes] = 0xff
 
 	zeroDocumentFrequency := append([]byte(nil), goTermRecord...)
 	binary.LittleEndian.PutUint64(zeroDocumentFrequency[4:12], 0)
 
 	zeroPostingsLength := append([]byte(nil), goTermRecord...)
 	binary.LittleEndian.PutUint64(zeroPostingsLength[12:20], 0)
+
+	zeroMaximumTermFrequency := append([]byte(nil), goTermRecord...)
+	binary.LittleEndian.PutUint32(zeroMaximumTermFrequency[20:24], 0)
 
 	tests := map[string]struct {
 		data               []byte
@@ -80,6 +92,7 @@ func TestReadTermRecordRejectsInvalidData(t *testing.T) {
 		"zero document frequency":              {zeroDocumentFrequency, uint64(len(zeroDocumentFrequency)), 2},
 		"frequency above documents with terms": {goTermRecord, uint64(len(goTermRecord)), 1},
 		"zero postings length":                 {zeroPostingsLength, uint64(len(zeroPostingsLength)), 2},
+		"zero maximum term frequency":          {zeroMaximumTermFrequency, uint64(len(zeroMaximumTermFrequency)), 2},
 		"truncated term":                       {goTermRecord[:len(goTermRecord)-1], uint64(len(goTermRecord)), 2},
 	}
 
@@ -102,8 +115,18 @@ func TestReadTermsDerivesPostingsRanges(t *testing.T) {
 	}
 
 	want := map[string]termEntry{
-		"go":  {documentFrequency: 2, postingsOffset: 8, postingsBytes: 24},
-		"yak": {documentFrequency: 1, postingsOffset: 32, postingsBytes: 16},
+		"go": {
+			documentFrequency: 2,
+			postingsOffset:    8,
+			postingsBytes:     24,
+			maxTermFrequency:  3,
+		},
+		"yak": {
+			documentFrequency: 1,
+			postingsOffset:    32,
+			postingsBytes:     16,
+			maxTermFrequency:  1,
+		},
 	}
 	if len(terms) != len(want) {
 		t.Fatalf("term count = %d, want %d", len(terms), len(want))
@@ -160,7 +183,12 @@ func TestReadTermFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := termEntry{documentFrequency: 2, postingsOffset: 8, postingsBytes: 24}
+	want := termEntry{
+		documentFrequency: 2,
+		postingsOffset:    8,
+		postingsBytes:     24,
+		maxTermFrequency:  3,
+	}
 	if terms["go"] != want {
 		t.Fatalf("entry for %q = %+v, want %+v", "go", terms["go"], want)
 	}

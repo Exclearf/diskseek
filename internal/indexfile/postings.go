@@ -33,10 +33,12 @@ func verifyPostingsFile(
 	totalDocuments := uint64(len(remainingTokenCounts))
 	for _, term := range orderedTerms {
 		entry := terms[term]
+		var maxTermFrequency uint32
 		visit := func(posting index.Posting) error {
 			if err := ctx.Err(); err != nil {
 				return err
 			}
+			maxTermFrequency = max(maxTermFrequency, posting.Frequency)
 			remaining := &remainingTokenCounts[posting.DocumentID]
 			if posting.Frequency > *remaining {
 				return fmt.Errorf("document %d term frequencies exceed its length", posting.DocumentID)
@@ -68,6 +70,9 @@ func verifyPostingsFile(
 		}
 		if err != nil {
 			return fmt.Errorf("verify %q postings: %w", term, err)
+		}
+		if maxTermFrequency != entry.maxTermFrequency {
+			return fmt.Errorf("verify %q postings: maximum term frequency does not match", term)
 		}
 	}
 	if err := reader.finish(); err != nil {

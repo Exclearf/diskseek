@@ -10,19 +10,21 @@ import (
 
 const (
 	maxTermBytes          = uint32(1 << 20)
-	termRecordHeaderBytes = 20
+	termRecordHeaderBytes = 24
 )
 
 type termRecord struct {
 	term              string
 	documentFrequency uint64
 	postingsBytes     uint64
+	maxTermFrequency  uint32
 }
 
 type termEntry struct {
 	documentFrequency uint64
 	postingsOffset    uint64
 	postingsBytes     uint64
+	maxTermFrequency  uint32
 }
 
 func writeTermRecord(writer io.Writer, record termRecord) error {
@@ -30,6 +32,7 @@ func writeTermRecord(writer io.Writer, record termRecord) error {
 	binary.LittleEndian.PutUint32(header[:4], uint32(len(record.term)))
 	binary.LittleEndian.PutUint64(header[4:12], record.documentFrequency)
 	binary.LittleEndian.PutUint64(header[12:20], record.postingsBytes)
+	binary.LittleEndian.PutUint32(header[20:24], record.maxTermFrequency)
 	if _, err := writer.Write(header[:]); err != nil {
 		return fmt.Errorf("write term record header: %w", err)
 	}
@@ -67,6 +70,10 @@ func readTermRecord(
 	if postingsBytes == 0 {
 		return termRecord{}, errors.New("invalid postings length")
 	}
+	maxTermFrequency := binary.LittleEndian.Uint32(header[20:24])
+	if maxTermFrequency == 0 {
+		return termRecord{}, errors.New("invalid maximum term frequency")
+	}
 
 	termBytes := make([]byte, int(termLength))
 	if _, err := io.ReadFull(reader, termBytes); err != nil {
@@ -79,6 +86,7 @@ func readTermRecord(
 		term:              string(termBytes),
 		documentFrequency: documentFrequency,
 		postingsBytes:     postingsBytes,
+		maxTermFrequency:  maxTermFrequency,
 	}, nil
 }
 
@@ -137,6 +145,7 @@ func readTerms(
 			documentFrequency: record.documentFrequency,
 			postingsOffset:    fileHeaderBytes + consumedPostings,
 			postingsBytes:     record.postingsBytes,
+			maxTermFrequency:  record.maxTermFrequency,
 		}
 		consumedPostings += record.postingsBytes
 		previousTerm = record.term

@@ -10,12 +10,12 @@ import (
 
 var (
 	goldenTermMetadata = TermFilesMetadata{
-		Terms:    FileMetadata{Length: 60, Checksum: 0xfd50af02},
+		Terms:    FileMetadata{Length: 68, Checksum: 0xbf433cbf},
 		Postings: FileMetadata{Length: 52, Checksum: 0x3d5463ec},
 		Codec:    PostingsCodecRaw,
 	}
 	goldenVByteTermMetadata = TermFilesMetadata{
-		Terms:    FileMetadata{Length: 60, Checksum: 0x5159752a},
+		Terms:    FileMetadata{Length: 68, Checksum: 0xb19a98da},
 		Postings: FileMetadata{Length: 34, Checksum: 0x8827a46a},
 		Codec:    PostingsCodecVByte,
 	}

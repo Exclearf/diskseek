@@ -27,11 +27,13 @@ func TestOpenGoldenIndex(t *testing.T) {
 			documentFrequency: 2,
 			postingsOffset:    8,
 			postingsBytes:     24,
+			maxTermFrequency:  3,
 		},
 		"search": {
 			documentFrequency: 1,
 			postingsOffset:    32,
 			postingsBytes:     16,
+			maxTermFrequency:  1,
 		},
 	}
 	if !maps.Equal(opened.terms, wantTerms) {

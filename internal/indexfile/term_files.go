@@ -34,11 +34,20 @@ func writeTermBodies(
 			return fmt.Errorf("read term: %w", err)
 		}
 
+		var maxTermFrequency uint32
+		observedNextPosting := func() (index.Posting, error) {
+			posting, err := nextPosting()
+			if err == nil {
+				maxTermFrequency = max(maxTermFrequency, posting.Frequency)
+			}
+			return posting, err
+		}
+
 		var postingsBytes uint64
 		if codec == PostingsCodecRaw {
-			postingsBytes, err = writeRawPostingList(postings, documentFrequency, nextPosting)
+			postingsBytes, err = writeRawPostingList(postings, documentFrequency, observedNextPosting)
 		} else {
-			postingsBytes, err = writeVBytePostingList(postings, documentFrequency, nextPosting)
+			postingsBytes, err = writeVBytePostingList(postings, documentFrequency, observedNextPosting)
 		}
 		if err != nil {
 			return fmt.Errorf("write %q postings: %w", term, err)
@@ -47,6 +56,7 @@ func writeTermBodies(
 			term:              term,
 			documentFrequency: documentFrequency,
 			postingsBytes:     postingsBytes,
+			maxTermFrequency:  maxTermFrequency,
 		}); err != nil {
 			return err
 		}

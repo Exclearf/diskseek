@@ -140,7 +140,17 @@ func postingVerificationFixture(t *testing.T) ([]byte, map[string]termEntry) {
 		t.Fatal(err)
 	}
 	return postingData.Bytes(), map[string]termEntry{
-		"go":     {documentFrequency: 2, postingsOffset: 8, postingsBytes: 24},
-		"search": {documentFrequency: 1, postingsOffset: 32, postingsBytes: 16},
+		"go": {
+			documentFrequency: 2,
+			postingsOffset:    8,
+			postingsBytes:     24,
+			maxTermFrequency:  3,
+		},
+		"search": {
+			documentFrequency: 1,
+			postingsOffset:    32,
+			postingsBytes:     16,
+			maxTermFrequency:  1,
+		},
 	}
 }
