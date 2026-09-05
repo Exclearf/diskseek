@@ -2,10 +2,58 @@ package indexfile
 
 import (
 	"bytes"
+	"encoding/binary"
 	"hash/crc32"
 	"io"
 	"testing"
 )
+
+func TestFileReaderValidatesChecksum(t *testing.T) {
+	data := []byte("DSKTERM\x01go\x00\x00\x00\x00")
+	binary.LittleEndian.PutUint32(data[len(data)-fileFooterBytes:], crc32.Checksum(data[:len(data)-fileFooterBytes], crc32cTable))
+
+	reader, err := newFileReader(bytes.NewReader(data), int64(len(data)), termsRole)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != "go" {
+		t.Fatalf("body = %q, want %q", body, "go")
+	}
+	if err := reader.finish(); err != nil {
+		t.Fatal(err)
+	}
+
+	data[fileHeaderBytes] ^= 1
+	reader, err = newFileReader(bytes.NewReader(data), int64(len(data)), termsRole)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.Copy(io.Discard, reader); err != nil {
+		t.Fatal(err)
+	}
+	if err := reader.finish(); err == nil {
+		t.Fatal("finish() error = nil after body corruption")
+	}
+}
+
+func TestFileReaderRequiresCompleteBody(t *testing.T) {
+	if _, err := newFileReader(bytes.NewReader(make([]byte, fileHeaderBytes+fileFooterBytes-1)), fileHeaderBytes+fileFooterBytes-1, termsRole); err == nil {
+		t.Fatal("newFileReader() error = nil for undersized file")
+	}
+
+	data := []byte("DSKTERM\x01go\x00\x00\x00\x00")
+	reader, err := newFileReader(bytes.NewReader(data), int64(len(data)), termsRole)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := reader.finish(); err == nil {
+		t.Fatal("finish() error = nil with unread body")
+	}
+}
 
 func TestFileWriterChecksumCoverage(t *testing.T) {
 	var output bytes.Buffer
