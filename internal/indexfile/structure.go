@@ -66,13 +66,18 @@ func verifyManifestFile(path string, role fileRole, metadata FileMetadata) (err 
 	if err != nil {
 		return err
 	}
-	if info.Size() != int64(metadata.Length) {
-		return fmt.Errorf("file size is %d, want %d", info.Size(), metadata.Length)
+	return verifyManifest(input, info.Size(), role, metadata)
+}
+
+func verifyManifest(input io.ReaderAt, size int64, role fileRole, metadata FileMetadata) error {
+	if size != int64(metadata.Length) {
+		return fmt.Errorf("file size is %d, want %d", size, metadata.Length)
 	}
-	if err := readHeader(input, role); err != nil {
+	header := io.NewSectionReader(input, 0, fileHeaderBytes)
+	if err := readHeader(header, role); err != nil {
 		return err
 	}
-	footer := io.NewSectionReader(input, info.Size()-fileFooterBytes, fileFooterBytes)
+	footer := io.NewSectionReader(input, size-fileFooterBytes, fileFooterBytes)
 	stored, err := readFooter(footer)
 	if err != nil {
 		return err

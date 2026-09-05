@@ -81,7 +81,7 @@ func Verify(ctx context.Context, directory string) (err error) {
 		contextReader{ctx, termInput},
 		int64(metadata.Terms.Terms.Length),
 		postingsBodyBytes,
-		documentCount,
+		lengths.documentsWithTerms,
 	)
 	if err != nil {
 		return fmt.Errorf("verify %s: %w", TermsFileName, err)

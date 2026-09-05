@@ -69,24 +69,24 @@ func TestReadTermRecordRejectsInvalidData(t *testing.T) {
 	binary.LittleEndian.PutUint64(zeroPostingsLength[12:20], 0)
 
 	tests := map[string]struct {
-		data           []byte
-		remainingBytes uint64
-		totalDocuments uint64
+		data               []byte
+		remainingBytes     uint64
+		documentsWithTerms uint64
 	}{
-		"zero term length":        {zeroTermLength, uint64(len(zeroTermLength)), 2},
-		"oversized term length":   {oversizedTermLength, uint64(len(oversizedTermLength)), 2},
-		"record crosses body":     {goTermRecord, uint64(len(goTermRecord) - 1), 2},
-		"invalid UTF-8":           {invalidUTF8, uint64(len(invalidUTF8)), 2},
-		"zero document frequency": {zeroDocumentFrequency, uint64(len(zeroDocumentFrequency)), 2},
-		"frequency above corpus":  {goTermRecord, uint64(len(goTermRecord)), 1},
-		"zero postings length":    {zeroPostingsLength, uint64(len(zeroPostingsLength)), 2},
-		"truncated term":          {goTermRecord[:len(goTermRecord)-1], uint64(len(goTermRecord)), 2},
+		"zero term length":                     {zeroTermLength, uint64(len(zeroTermLength)), 2},
+		"oversized term length":                {oversizedTermLength, uint64(len(oversizedTermLength)), 2},
+		"record crosses body":                  {goTermRecord, uint64(len(goTermRecord) - 1), 2},
+		"invalid UTF-8":                        {invalidUTF8, uint64(len(invalidUTF8)), 2},
+		"zero document frequency":              {zeroDocumentFrequency, uint64(len(zeroDocumentFrequency)), 2},
+		"frequency above documents with terms": {goTermRecord, uint64(len(goTermRecord)), 1},
+		"zero postings length":                 {zeroPostingsLength, uint64(len(zeroPostingsLength)), 2},
+		"truncated term":                       {goTermRecord[:len(goTermRecord)-1], uint64(len(goTermRecord)), 2},
 	}
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			if _, err := readTermRecord(
-				bytes.NewReader(test.data), test.remainingBytes, test.totalDocuments,
+				bytes.NewReader(test.data), test.remainingBytes, test.documentsWithTerms,
 			); err == nil {
 				t.Fatal("readTermRecord returned nil error")
 			}

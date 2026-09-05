@@ -42,7 +42,7 @@ func writeTermRecord(writer io.Writer, record termRecord) error {
 func readTermRecord(
 	reader io.Reader,
 	remainingBytes uint64,
-	totalDocuments uint64,
+	documentsWithTerms uint64,
 ) (termRecord, error) {
 	if remainingBytes < termRecordHeaderBytes {
 		return termRecord{}, errors.New("term record is truncated")
@@ -60,7 +60,7 @@ func readTermRecord(
 		return termRecord{}, errors.New("term record crosses the file body")
 	}
 	documentFrequency := binary.LittleEndian.Uint64(header[4:12])
-	if documentFrequency == 0 || documentFrequency > totalDocuments {
+	if documentFrequency == 0 || documentFrequency > documentsWithTerms {
 		return termRecord{}, errors.New("invalid document frequency")
 	}
 	postingsBytes := binary.LittleEndian.Uint64(header[12:20])
@@ -86,7 +86,7 @@ func readTermFile(
 	input io.Reader,
 	size int64,
 	postingsBodyBytes uint64,
-	totalDocuments uint64,
+	documentsWithTerms uint64,
 ) (map[string]termEntry, error) {
 	reader, err := newFileReader(input, size, termsRole)
 	if err != nil {
@@ -96,7 +96,7 @@ func readTermFile(
 		reader,
 		uint64(reader.body.N),
 		postingsBodyBytes,
-		totalDocuments,
+		documentsWithTerms,
 	)
 	if err != nil {
 		return nil, err
@@ -111,7 +111,7 @@ func readTerms(
 	reader io.Reader,
 	termBodyBytes uint64,
 	postingsBodyBytes uint64,
-	totalDocuments uint64,
+	documentsWithTerms uint64,
 ) (map[string]termEntry, error) {
 	terms := make(map[string]termEntry)
 	remaining := termBodyBytes
@@ -119,7 +119,7 @@ func readTerms(
 	var consumedPostings uint64
 
 	for remaining != 0 {
-		record, err := readTermRecord(reader, remaining, totalDocuments)
+		record, err := readTermRecord(reader, remaining, documentsWithTerms)
 		if err != nil {
 			return nil, fmt.Errorf("read term %d: %w", len(terms), err)
 		}

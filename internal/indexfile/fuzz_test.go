@@ -56,17 +56,17 @@ func FuzzReadExternalIDs(f *testing.F) {
 func FuzzReadTerms(f *testing.F) {
 	data := goldenIndexBody(f, TermsFileName)
 	f.Add(data, uint64(40), uint64(2))
-	f.Fuzz(func(t *testing.T, data []byte, postingsBytes uint64, documentCount uint64) {
+	f.Fuzz(func(t *testing.T, data []byte, postingsBytes uint64, documentsWithTerms uint64) {
 		if len(data) > maxFuzzInputBytes {
 			t.Skip()
 		}
 		postingsBytes %= maxFuzzInputBytes + 1
-		documentCount %= maxFuzzDocuments + 1
+		documentsWithTerms %= maxFuzzDocuments + 1
 		_, _ = readTerms(
 			bytes.NewReader(data),
 			uint64(len(data)),
 			postingsBytes,
-			documentCount,
+			documentsWithTerms,
 		)
 	})
 }
