@@ -7,7 +7,10 @@ import (
 	"github.com/Exclearf/diskseek/internal/index"
 )
 
-const postingBlockHeaderBytes = 8
+const (
+	postingBlockHeaderBytes = 8
+	postingsPerBlock        = 128
+)
 
 type postingBlockHeader struct {
 	lastDocumentID index.DocumentID

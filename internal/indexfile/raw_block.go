@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	rawPostingsPerBlock        = 128
+	rawPostingsPerBlock        = postingsPerBlock
 	rawPostingBlockHeaderBytes = postingBlockHeaderBytes
 	rawPostingBytes            = 8
 )
