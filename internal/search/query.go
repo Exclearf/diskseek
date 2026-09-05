@@ -55,3 +55,14 @@ func buildDiskQueryPlan(idx *indexfile.Index, query string) (diskQueryPlan, erro
 	}
 	return plan, nil
 }
+
+func (p *diskQueryPlan) selectedUpperBound(selected []*diskQueryTerm) float64 {
+	var bound float64
+	for termIndex := range p.terms {
+		term := &p.terms[termIndex]
+		if slices.Contains(selected, term) {
+			bound += term.upperBound
+		}
+	}
+	return bound
+}

@@ -2,6 +2,7 @@ package search
 
 import (
 	"math"
+	"math/rand"
 	"path/filepath"
 	"slices"
 	"testing"
@@ -71,6 +72,83 @@ func TestBuildDiskQueryPlanUsesPreparedTerms(t *testing.T) {
 		wantUpperBound := bm25TermUpperBound(wantIDF, wantTerm.maxTermFrequency, plan.averageDocumentLength)
 		if math.Float64bits(got.upperBound) != math.Float64bits(wantUpperBound) {
 			t.Fatalf("%q upper bound = %v, want %v", got.term, got.upperBound, wantUpperBound)
+		}
+	}
+}
+
+func TestSelectedUpperBoundUsesCanonicalTermOrder(t *testing.T) {
+	plan := diskQueryPlan{terms: []diskQueryTerm{
+		{term: "a", upperBound: 0.1},
+		{term: "b", upperBound: 0.2},
+		{term: "c", upperBound: 0.3},
+		{term: "d", upperBound: 0.4},
+	}}
+	selected := []*diskQueryTerm{&plan.terms[2], &plan.terms[1], &plan.terms[0]}
+
+	got := plan.selectedUpperBound(selected)
+	var want float64
+	for _, term := range plan.terms[:3] {
+		want += term.upperBound
+	}
+	if math.Float64bits(got) != math.Float64bits(want) {
+		t.Fatalf("selected upper bound bits = %#x, want %#x", math.Float64bits(got), math.Float64bits(want))
+	}
+
+	var cursorOrder float64
+	for _, term := range selected {
+		cursorOrder += term.upperBound
+	}
+	if math.Float64bits(got) == math.Float64bits(cursorOrder) {
+		t.Fatal("test values do not distinguish canonical and cursor order")
+	}
+}
+
+func TestSelectedUpperBoundDominatesCanonicalScore(t *testing.T) {
+	const generatedCases = 10_000
+
+	random := rand.New(rand.NewSource(0))
+	for testCase := range generatedCases {
+		termCount := random.Intn(8) + 1
+		plan := diskQueryPlan{terms: make([]diskQueryTerm, termCount)}
+		contributions := make([]float64, termCount)
+		selectedTerms := make([]bool, termCount)
+		selectedPositions := make([]int, 0, termCount)
+		for termIndex := range plan.terms {
+			bound := random.Float64()*44 + 1e-12
+			plan.terms[termIndex].upperBound = bound
+			if termIndex != 0 && random.Intn(2) == 0 {
+				continue
+			}
+			selectedTerms[termIndex] = true
+			selectedPositions = append(selectedPositions, termIndex)
+			if testCase%2 == 0 {
+				contributions[termIndex] = math.Nextafter(bound, 0)
+			} else {
+				contributions[termIndex] = random.Float64() * bound
+			}
+		}
+
+		random.Shuffle(len(selectedPositions), func(left, right int) {
+			selectedPositions[left], selectedPositions[right] = selectedPositions[right], selectedPositions[left]
+		})
+		selected := make([]*diskQueryTerm, len(selectedPositions))
+		for position, termIndex := range selectedPositions {
+			selected[position] = &plan.terms[termIndex]
+		}
+
+		var score, wantBound float64
+		for termIndex, contribution := range contributions {
+			if selectedTerms[termIndex] {
+				score += contribution
+				wantBound += plan.terms[termIndex].upperBound
+			}
+		}
+		bound := plan.selectedUpperBound(selected)
+		if math.Float64bits(bound) != math.Float64bits(wantBound) {
+			t.Fatalf("case %d: bound bits = %#x, want %#x", testCase, math.Float64bits(bound), math.Float64bits(wantBound))
+		}
+		if score > bound {
+			t.Fatalf("case %d: score %v exceeds bound %v", testCase, score, bound)
 		}
 	}
 }
