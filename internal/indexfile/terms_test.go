@@ -153,3 +153,23 @@ func TestReadTermsRejectsInvalidSequence(t *testing.T) {
 		})
 	}
 }
+
+func TestReadTermFile(t *testing.T) {
+	data := writeIndexFileTestData(t, termsRole, goTermRecord)
+	terms, err := readTermFile(bytes.NewReader(data), int64(len(data)), 24, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := termEntry{documentFrequency: 2, postingsOffset: 8, postingsBytes: 24}
+	if terms["go"] != want {
+		t.Fatalf("entry for %q = %+v, want %+v", "go", terms["go"], want)
+	}
+}
+
+func TestReadTermFileValidatesChecksum(t *testing.T) {
+	data := writeIndexFileTestData(t, termsRole, goTermRecord)
+	data[fileHeaderBytes+termRecordHeaderBytes] = 'h'
+	if _, err := readTermFile(bytes.NewReader(data), int64(len(data)), 24, 2); err == nil {
+		t.Fatal("readTermFile() error = nil")
+	}
+}

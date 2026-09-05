@@ -82,6 +82,31 @@ func readTermRecord(
 	}, nil
 }
 
+func readTermFile(
+	input io.Reader,
+	size int64,
+	postingsBodyBytes uint64,
+	totalDocuments uint64,
+) (map[string]termEntry, error) {
+	reader, err := newFileReader(input, size, termsRole)
+	if err != nil {
+		return nil, err
+	}
+	terms, err := readTerms(
+		reader,
+		uint64(reader.body.N),
+		postingsBodyBytes,
+		totalDocuments,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if err := reader.finish(); err != nil {
+		return nil, fmt.Errorf("finish terms: %w", err)
+	}
+	return terms, nil
+}
+
 func readTerms(
 	reader io.Reader,
 	termBodyBytes uint64,
