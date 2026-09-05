@@ -11,6 +11,7 @@ import (
 type TermFilesMetadata struct {
 	Terms    FileMetadata
 	Postings FileMetadata
+	Codec    PostingsCodec
 }
 
 func writeTermBodies(
@@ -72,5 +73,6 @@ func WriteTermFiles(
 	return TermFilesMetadata{
 		Terms:    termMetadata,
 		Postings: postingMetadata,
+		Codec:    PostingsCodecRaw,
 	}, nil
 }

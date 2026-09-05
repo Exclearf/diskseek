@@ -8,9 +8,8 @@ import (
 )
 
 const (
-	metadataBodyBytes  = 68
-	analyzerContractID = 1
-
+	metadataBodyBytes       = 68
+	analyzerContractID      = 1
 	fileMetadataRecordBytes = 12
 )
 
@@ -31,6 +30,10 @@ func WriteMetadataFile(
 	terms TermFilesMetadata,
 	documents DocumentFilesMetadata,
 ) error {
+	if !terms.Codec.supported() {
+		return fmt.Errorf("unsupported postings codec ID %d", terms.Codec)
+	}
+
 	writer, err := newFileWriter(output, metadataRole)
 	if err != nil {
 		return err
@@ -38,7 +41,7 @@ func WriteMetadataFile(
 
 	var body [metadataBodyBytes]byte
 	binary.LittleEndian.PutUint32(body[0:4], analyzerContractID)
-	binary.LittleEndian.PutUint32(body[4:8], rawPostingsCodecID)
+	binary.LittleEndian.PutUint32(body[4:8], uint32(terms.Codec))
 
 	files := [...]FileMetadata{
 		terms.Terms,
@@ -82,14 +85,16 @@ func readMetadataFile(input io.Reader, size int64) (indexMetadata, error) {
 	if analyzerID := binary.LittleEndian.Uint32(body[0:4]); analyzerID != analyzerContractID {
 		return indexMetadata{}, fmt.Errorf("unsupported analyzer ID %d", analyzerID)
 	}
-	if codecID := binary.LittleEndian.Uint32(body[4:8]); codecID != rawPostingsCodecID {
-		return indexMetadata{}, fmt.Errorf("unsupported postings codec ID %d", codecID)
+	codec := PostingsCodec(binary.LittleEndian.Uint32(body[4:8]))
+	if !codec.supported() {
+		return indexMetadata{}, fmt.Errorf("unsupported postings codec ID %d", codec)
 	}
 
 	metadata := indexMetadata{
 		Terms: TermFilesMetadata{
 			Terms:    decodeFileMetadata(body[8:20]),
 			Postings: decodeFileMetadata(body[20:32]),
+			Codec:    codec,
 		},
 		Documents: DocumentFilesMetadata{
 			Lengths: decodeFileMetadata(body[32:44]),
@@ -122,5 +127,3 @@ func decodeFileMetadata(data []byte) FileMetadata {
 		Checksum: binary.LittleEndian.Uint32(data[8:12]),
 	}
 }
-
-const rawPostingsCodecID = 1

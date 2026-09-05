@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"hash/crc32"
+	"io"
 	"testing"
 )
 
@@ -11,6 +12,7 @@ var (
 	goldenTermMetadata = TermFilesMetadata{
 		Terms:    FileMetadata{Length: 60, Checksum: 0xfd50af02},
 		Postings: FileMetadata{Length: 52, Checksum: 0x3d5463ec},
+		Codec:    PostingsCodecRaw,
 	}
 	goldenDocumentMetadata = DocumentFilesMetadata{
 		Lengths: FileMetadata{Length: 20, Checksum: 0x00e08ad4},
@@ -18,6 +20,14 @@ var (
 		Data:    FileMetadata{Length: 14, Checksum: 0x20226602},
 	}
 )
+
+func TestWriteMetadataFileRejectsUnsupportedPostingsCodec(t *testing.T) {
+	terms := goldenTermMetadata
+	terms.Codec = PostingsCodec(3)
+	if err := WriteMetadataFile(io.Discard, terms, goldenDocumentMetadata); err == nil {
+		t.Fatal("WriteMetadataFile() error = nil")
+	}
+}
 
 func TestReadMetadataFile(t *testing.T) {
 	data := readGoldenIndexFile(t, MetadataFileName)
@@ -49,7 +59,7 @@ func TestReadMetadataFileRejectsInvalidData(t *testing.T) {
 			binary.LittleEndian.PutUint32(data[8:12], analyzerContractID+1)
 		})},
 		{"unsupported codec", mutateMetadata(t, func(data []byte) {
-			binary.LittleEndian.PutUint32(data[12:16], rawPostingsCodecID+1)
+			binary.LittleEndian.PutUint32(data[12:16], 3)
 		})},
 		{"terms file below minimum", mutateMetadata(t, func(data []byte) {
 			binary.LittleEndian.PutUint64(data[16:24], fileHeaderBytes+fileFooterBytes-1)
@@ -81,7 +91,6 @@ func mutateMetadata(t *testing.T, mutate func([]byte)) []byte {
 }
 
 func TestWriteMetadataFile(t *testing.T) {
-
 	var output bytes.Buffer
 	if err := WriteMetadataFile(&output, goldenTermMetadata, goldenDocumentMetadata); err != nil {
 		t.Fatal(err)
@@ -90,5 +99,31 @@ func TestWriteMetadataFile(t *testing.T) {
 	want := readGoldenIndexFile(t, MetadataFileName)
 	if !bytes.Equal(output.Bytes(), want) {
 		t.Fatalf("metadata file = % x, want % x", output.Bytes(), want)
+	}
+}
+
+func TestWriteMetadataFileRecordsPostingsCodec(t *testing.T) {
+	terms := goldenTermMetadata
+	terms.Codec = PostingsCodecVByte
+
+	var output bytes.Buffer
+	if err := WriteMetadataFile(&output, terms, goldenDocumentMetadata); err != nil {
+		t.Fatal(err)
+	}
+	if got := binary.LittleEndian.Uint32(output.Bytes()[fileHeaderBytes+4 : fileHeaderBytes+8]); got != 2 {
+		t.Fatalf("postings codec ID = %d, want 2", got)
+	}
+}
+
+func TestReadMetadataFileSupportsVBytePostings(t *testing.T) {
+	data := mutateMetadata(t, func(data []byte) {
+		binary.LittleEndian.PutUint32(data[12:16], 2)
+	})
+	metadata, err := readMetadataFile(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if metadata.Terms.Codec != PostingsCodecVByte {
+		t.Fatalf("postings codec = %d, want %d", metadata.Terms.Codec, PostingsCodecVByte)
 	}
 }
