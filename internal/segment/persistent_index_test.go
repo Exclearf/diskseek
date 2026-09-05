@@ -2,12 +2,16 @@ package segment
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
+	"maps"
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/Exclearf/diskseek/internal/corpus"
 	"github.com/Exclearf/diskseek/internal/index"
 	"github.com/Exclearf/diskseek/internal/indexfile"
 )
@@ -140,6 +144,67 @@ func TestWriteIndexPreservesExistingDestination(t *testing.T) {
 	if data, err := os.ReadFile(markerPath); err != nil || string(data) != "keep" {
 		t.Fatalf("existing destination changed: data %q, error %v", data, err)
 	}
+}
+
+func TestPersistentIndexDoesNotDependOnSegmentLayout(t *testing.T) {
+	input, err := os.ReadFile("../index/testdata/corpus.tsv")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	oneRun, oneRunCount := buildPersistentTestIndex(t, input, math.MaxUint64)
+	multipass, multipassRunCount := buildPersistentTestIndex(t, input, segmentBufferBytes)
+	if oneRunCount != 1 {
+		t.Fatalf("one-run build created %d runs", oneRunCount)
+	}
+	if multipassRunCount <= 2 {
+		t.Fatalf("multipass build created %d runs, want more than fan-in 2", multipassRunCount)
+	}
+	if !maps.EqualFunc(readIndexDirectory(t, oneRun), readIndexDirectory(t, multipass), bytes.Equal) {
+		t.Fatal("persistent index directories differ")
+	}
+}
+
+func buildPersistentTestIndex(t *testing.T, input []byte, flushTarget uint64) (string, int) {
+	t.Helper()
+
+	result, err := build(
+		context.Background(),
+		corpus.NewTSVReader(bytes.NewReader(input)),
+		flushTarget,
+		t.TempDir(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runCount := len(result.runPaths)
+	mergedRun, _, err := mergeRuns(context.Background(), result.directory, result.runPaths, 2, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	destination := filepath.Join(t.TempDir(), "index")
+	if err := writeIndex(destination, mergedRun, result.documentsPath); err != nil {
+		t.Fatal(err)
+	}
+	return destination, runCount
+}
+
+func readIndexDirectory(t *testing.T, directory string) map[string][]byte {
+	t.Helper()
+
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := make(map[string][]byte, len(entries))
+	for _, entry := range entries {
+		data, err := os.ReadFile(filepath.Join(directory, entry.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		files[entry.Name()] = data
+	}
+	return files
 }
 
 func writeIndexTestSources(t *testing.T) (string, string) {
