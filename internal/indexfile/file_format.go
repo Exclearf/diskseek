@@ -10,6 +10,15 @@ import (
 type fileRole string
 
 const (
+	MetadataFileName        = "index.meta"
+	TermsFileName           = "terms.bin"
+	PostingsFileName        = "postings.bin"
+	DocumentLengthsFileName = "doclens.bin"
+	DocumentOffsetsFileName = "docids.off"
+	DocumentDataFileName    = "docids.dat"
+)
+
+const (
 	fileRoleBytes                = 7
 	fileHeaderBytes              = fileRoleBytes + 1
 	fileFormatVersion            = 1

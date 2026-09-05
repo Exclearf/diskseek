@@ -43,27 +43,27 @@ func writeIndex(destination, runPath, documentsPath string) (err error) {
 	}
 	openFiles = append(openFiles, documents)
 
-	terms, err := os.Create(filepath.Join(destination, "terms.bin"))
+	terms, err := os.Create(filepath.Join(destination, indexfile.TermsFileName))
 	if err != nil {
 		return fmt.Errorf("create terms file: %w", err)
 	}
 	openFiles = append(openFiles, terms)
-	postings, err := os.Create(filepath.Join(destination, "postings.bin"))
+	postings, err := os.Create(filepath.Join(destination, indexfile.PostingsFileName))
 	if err != nil {
 		return fmt.Errorf("create postings file: %w", err)
 	}
 	openFiles = append(openFiles, postings)
-	documentLengths, err := os.Create(filepath.Join(destination, "doclens.bin"))
+	documentLengths, err := os.Create(filepath.Join(destination, indexfile.DocumentLengthsFileName))
 	if err != nil {
 		return fmt.Errorf("create document lengths file: %w", err)
 	}
 	openFiles = append(openFiles, documentLengths)
-	documentOffsets, err := os.Create(filepath.Join(destination, "docids.off"))
+	documentOffsets, err := os.Create(filepath.Join(destination, indexfile.DocumentOffsetsFileName))
 	if err != nil {
 		return fmt.Errorf("create document offsets file: %w", err)
 	}
 	openFiles = append(openFiles, documentOffsets)
-	documentData, err := os.Create(filepath.Join(destination, "docids.dat"))
+	documentData, err := os.Create(filepath.Join(destination, indexfile.DocumentDataFileName))
 	if err != nil {
 		return fmt.Errorf("create document data file: %w", err)
 	}
@@ -89,7 +89,7 @@ func writeIndex(destination, runPath, documentsPath string) (err error) {
 		return fmt.Errorf("close index data files: %w", closeErr)
 	}
 
-	metadata, err := os.Create(filepath.Join(destination, "index.meta"))
+	metadata, err := os.Create(filepath.Join(destination, indexfile.MetadataFileName))
 	if err != nil {
 		return fmt.Errorf("create metadata file: %w", err)
 	}

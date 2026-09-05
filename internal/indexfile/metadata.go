@@ -101,11 +101,11 @@ func readMetadataFile(input io.Reader, size int64) (indexMetadata, error) {
 		metadata FileMetadata
 		minimum  uint64
 	}{
-		{"terms.bin", metadata.Terms.Terms, minimumFileBytes},
-		{"postings.bin", metadata.Terms.Postings, minimumFileBytes},
-		{"doclens.bin", metadata.Documents.Lengths, minimumFileBytes},
-		{"docids.off", metadata.Documents.Offsets, minimumDocumentOffsetsFileBytes},
-		{"docids.dat", metadata.Documents.Data, minimumFileBytes},
+		{TermsFileName, metadata.Terms.Terms, minimumFileBytes},
+		{PostingsFileName, metadata.Terms.Postings, minimumFileBytes},
+		{DocumentLengthsFileName, metadata.Documents.Lengths, minimumFileBytes},
+		{DocumentOffsetsFileName, metadata.Documents.Offsets, minimumDocumentOffsetsFileBytes},
+		{DocumentDataFileName, metadata.Documents.Data, minimumFileBytes},
 	}
 	for _, file := range files {
 		if file.metadata.Length < file.minimum || file.metadata.Length > maximumFileBytes {
