@@ -56,6 +56,7 @@ func writeTermBodies(
 func WriteTermFiles(
 	termOutput io.Writer,
 	postingOutput io.Writer,
+	codec PostingsCodec,
 	nextTerm func() (string, uint64, error),
 	nextPosting func() (index.Posting, error),
 ) (TermFilesMetadata, error) {
@@ -68,7 +69,7 @@ func WriteTermFiles(
 		return TermFilesMetadata{}, err
 	}
 
-	if err := writeTermBodies(terms, postings, PostingsCodecRaw, nextTerm, nextPosting); err != nil {
+	if err := writeTermBodies(terms, postings, codec, nextTerm, nextPosting); err != nil {
 		return TermFilesMetadata{}, err
 	}
 	postingMetadata, err := postings.finish()
@@ -83,6 +84,6 @@ func WriteTermFiles(
 	return TermFilesMetadata{
 		Terms:    termMetadata,
 		Postings: postingMetadata,
-		Codec:    PostingsCodecRaw,
+		Codec:    codec,
 	}, nil
 }

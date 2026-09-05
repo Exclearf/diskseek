@@ -90,7 +90,13 @@ func writeVerificationTestIndex(
 
 	var termData, postingData bytes.Buffer
 	source := termTestSource{terms: terms}
-	termMetadata, err := WriteTermFiles(&termData, &postingData, source.nextTerm, source.nextPosting)
+	termMetadata, err := WriteTermFiles(
+		&termData,
+		&postingData,
+		PostingsCodecRaw,
+		source.nextTerm,
+		source.nextPosting,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

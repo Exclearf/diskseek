@@ -126,7 +126,13 @@ func postingVerificationFixture(t *testing.T) ([]byte, map[string]termEntry) {
 		},
 	}}
 	var termData, postingData bytes.Buffer
-	if _, err := WriteTermFiles(&termData, &postingData, source.nextTerm, source.nextPosting); err != nil {
+	if _, err := WriteTermFiles(
+		&termData,
+		&postingData,
+		PostingsCodecRaw,
+		source.nextTerm,
+		source.nextPosting,
+	); err != nil {
 		t.Fatal(err)
 	}
 	return postingData.Bytes(), map[string]termEntry{

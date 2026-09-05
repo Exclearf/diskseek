@@ -67,9 +67,13 @@ func TestWritePersistentTermFilesReadsRun(t *testing.T) {
 		bytes.NewReader(encodeMergeTestRun(t, runHeader{documentCount: 2}, terms)),
 		&gotTerms,
 		&gotPostings,
+		indexfile.PostingsCodecVByte,
 	)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if gotMetadata.Codec != indexfile.PostingsCodecVByte {
+		t.Fatalf("postings codec = %d, want %d", gotMetadata.Codec, indexfile.PostingsCodecVByte)
 	}
 
 	termIndex := 0
@@ -78,6 +82,7 @@ func TestWritePersistentTermFilesReadsRun(t *testing.T) {
 	wantMetadata, err := indexfile.WriteTermFiles(
 		&wantTerms,
 		&wantPostings,
+		indexfile.PostingsCodecVByte,
 		func() (string, uint64, error) {
 			if termIndex == len(terms) {
 				return "", 0, io.EOF
@@ -122,7 +127,7 @@ func TestWriteIndexRemovesIncompleteDirectory(t *testing.T) {
 	}
 	destination := filepath.Join(directory, "index")
 
-	if err := writeIndex(destination, runPath, documentsPath); err == nil {
+	if err := writeIndex(destination, runPath, documentsPath, indexfile.PostingsCodecRaw); err == nil {
 		t.Fatal("writeIndex() error = nil")
 	}
 	if _, err := os.Stat(destination); !errors.Is(err, os.ErrNotExist) {
@@ -138,7 +143,7 @@ func TestWriteIndexPreservesExistingDestination(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := writeIndex(destination, runPath, documentsPath); err == nil {
+	if err := writeIndex(destination, runPath, documentsPath, indexfile.PostingsCodecRaw); err == nil {
 		t.Fatal("writeIndex() error = nil")
 	}
 	if data, err := os.ReadFile(markerPath); err != nil || string(data) != "keep" {
@@ -186,7 +191,7 @@ func buildPersistentTestIndex(t *testing.T, input []byte, flushTarget uint64) (s
 		t.Fatal(err)
 	}
 	destination := filepath.Join(t.TempDir(), "index")
-	if err := writeIndex(destination, mergedRun, result.documentsPath); err != nil {
+	if err := writeIndex(destination, mergedRun, result.documentsPath, indexfile.PostingsCodecRaw); err != nil {
 		t.Fatal(err)
 	}
 	return destination, runCount
@@ -253,11 +258,11 @@ func persistentIndexTestDocuments() []index.DocumentMeta {
 	}
 }
 
-func TestWriteIndexCreatesCompleteDirectory(t *testing.T) {
+func TestWriteIndexCreatesCompleteVByteDirectory(t *testing.T) {
 	runPath, documentsPath := writeIndexTestSources(t)
 	destination := filepath.Join(t.TempDir(), "index")
 
-	if err := writeIndex(destination, runPath, documentsPath); err != nil {
+	if err := writeIndex(destination, runPath, documentsPath, indexfile.PostingsCodecVByte); err != nil {
 		t.Fatal(err)
 	}
 
@@ -273,7 +278,7 @@ func TestWriteIndexCreatesCompleteDirectory(t *testing.T) {
 		{"docids.off", 36},
 		{"doclens.bin", 20},
 		{"index.meta", 80},
-		{"postings.bin", 52},
+		{"postings.bin", 34},
 		{"terms.bin", 60},
 	}
 	if len(entries) != len(want) {

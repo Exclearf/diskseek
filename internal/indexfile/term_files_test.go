@@ -155,6 +155,7 @@ func TestWriteTermFiles(t *testing.T) {
 	metadata, err := WriteTermFiles(
 		&terms,
 		&postings,
+		PostingsCodecRaw,
 		source.nextTerm,
 		source.nextPosting,
 	)

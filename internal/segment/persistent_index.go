@@ -10,7 +10,10 @@ import (
 	"github.com/Exclearf/diskseek/internal/indexfile"
 )
 
-func writeIndex(destination, runPath, documentsPath string) (err error) {
+func writeIndex(
+	destination, runPath, documentsPath string,
+	codec indexfile.PostingsCodec,
+) (err error) {
 	if err := os.Mkdir(destination, 0o755); err != nil {
 		return fmt.Errorf("create index directory: %w", err)
 	}
@@ -69,7 +72,7 @@ func writeIndex(destination, runPath, documentsPath string) (err error) {
 	}
 	openFiles = append(openFiles, documentData)
 
-	termMetadata, err := writePersistentTermFiles(run, terms, postings)
+	termMetadata, err := writePersistentTermFiles(run, terms, postings, codec)
 	if err != nil {
 		return fmt.Errorf("write term files: %w", err)
 	}
@@ -122,10 +125,11 @@ func writePersistentTermFiles(
 	run io.Reader,
 	termOutput io.Writer,
 	postingOutput io.Writer,
+	codec indexfile.PostingsCodec,
 ) (indexfile.TermFilesMetadata, error) {
 	terms, err := newRunReader(run)
 	if err != nil {
 		return indexfile.TermFilesMetadata{}, err
 	}
-	return indexfile.WriteTermFiles(termOutput, postingOutput, terms.nextTerm, terms.nextPosting)
+	return indexfile.WriteTermFiles(termOutput, postingOutput, codec, terms.nextTerm, terms.nextPosting)
 }

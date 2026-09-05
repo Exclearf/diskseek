@@ -61,7 +61,13 @@ func writeStructureTestIndex(t *testing.T) (string, indexMetadata) {
 
 	var terms, postings bytes.Buffer
 	source := termTestSource{}
-	termMetadata, err := WriteTermFiles(&terms, &postings, source.nextTerm, source.nextPosting)
+	termMetadata, err := WriteTermFiles(
+		&terms,
+		&postings,
+		PostingsCodecRaw,
+		source.nextTerm,
+		source.nextPosting,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
