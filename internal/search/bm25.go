@@ -24,3 +24,7 @@ func bm25TermScore(
 	denominator := float64(termFrequency) + bm25K1*lengthNormalization
 	return float64(idf * (numerator / denominator))
 }
+
+func bm25TermUpperBound(idf float64, maxTermFrequency uint32, averageDocumentLength float64) float64 {
+	return bm25TermScore(idf, maxTermFrequency, maxTermFrequency, averageDocumentLength)
+}

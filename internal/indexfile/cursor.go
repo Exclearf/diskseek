@@ -62,6 +62,10 @@ func (c *Cursor) DocumentFrequency() uint64 {
 	return c.term.documentFrequency
 }
 
+func (c *Cursor) MaxTermFrequency() uint32 {
+	return c.term.maxTermFrequency
+}
+
 func (c *Cursor) Stats() CursorStats {
 	return c.stats
 }

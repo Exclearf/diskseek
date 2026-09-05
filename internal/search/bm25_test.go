@@ -2,6 +2,7 @@ package search
 
 import (
 	"math"
+	"math/rand"
 	"testing"
 )
 
@@ -45,5 +46,77 @@ func TestBM25TermScoreMaterialization(t *testing.T) {
 	const wantBits = 0x3fd05397829cbc14
 	if got := math.Float64bits(score); got != wantBits {
 		t.Fatalf("score bits = %#x, want %#x", got, uint64(wantBits))
+	}
+}
+
+func TestBM25TermUpperBound(t *testing.T) {
+	const (
+		idf                   = 0.5
+		maxTermFrequency      = 3
+		averageDocumentLength = 2.5
+	)
+
+	got := bm25TermUpperBound(idf, maxTermFrequency, averageDocumentLength)
+	want := bm25TermScore(idf, maxTermFrequency, maxTermFrequency, averageDocumentLength)
+	if math.Float64bits(got) != math.Float64bits(want) {
+		t.Fatalf("upper bound = %v, want %v", got, want)
+	}
+}
+
+func TestBM25TermUpperBoundDominatesValidPostings(t *testing.T) {
+	const generatedCases = 10_000
+
+	check := func(
+		documentsWithTerms, documentFrequency uint64,
+		maxTermFrequency, termFrequency, documentLength uint32,
+		averageDocumentLength float64,
+	) {
+		t.Helper()
+		idf := bm25IDF(documentsWithTerms, documentFrequency)
+		score := bm25TermScore(idf, termFrequency, documentLength, averageDocumentLength)
+		bound := bm25TermUpperBound(idf, maxTermFrequency, averageDocumentLength)
+		if math.IsNaN(score) || math.IsInf(score, 0) || math.IsNaN(bound) || math.IsInf(bound, 0) || score > bound {
+			t.Fatalf(
+				"score %v exceeds bound %v for tf=%d, length=%d, maxTF=%d, avgdl=%v, N=%d, df=%d",
+				score,
+				bound,
+				termFrequency,
+				documentLength,
+				maxTermFrequency,
+				averageDocumentLength,
+				documentsWithTerms,
+				documentFrequency,
+			)
+		}
+	}
+
+	check(1, 1, 1, 1, 1, 1)
+	check(1, 1, math.MaxUint32, 1, math.MaxUint32, 1)
+	check(1_000_000, 1, math.MaxUint32, math.MaxUint32, math.MaxUint32, math.MaxUint32)
+	check(math.MaxUint32, math.MaxUint32, math.MaxUint32, math.MaxUint32-1, math.MaxUint32-1, math.MaxUint32)
+
+	random := rand.New(rand.NewSource(0))
+	for range generatedCases {
+		documentsWithTerms := random.Uint64()%1_000_000 + 1
+		documentFrequency := random.Uint64()%documentsWithTerms + 1
+
+		maxTermFrequency := random.Uint32()
+		if maxTermFrequency == 0 {
+			maxTermFrequency = 1
+		}
+		termFrequency := uint32(random.Uint64()%uint64(maxTermFrequency)) + 1
+		documentLength := termFrequency + uint32(
+			random.Uint64()%(uint64(math.MaxUint32)-uint64(termFrequency)+1),
+		)
+		averageDocumentLength := 1 + random.Float64()*(float64(math.MaxUint32)-1)
+
+		check(
+			documentsWithTerms,
+			documentFrequency,
+			maxTermFrequency,
+			termFrequency,
+			documentLength,
+			averageDocumentLength,
+		)
 	}
 }

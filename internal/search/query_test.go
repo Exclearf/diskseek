@@ -43,9 +43,10 @@ func TestBuildDiskQueryPlanUsesPreparedTerms(t *testing.T) {
 	want := []struct {
 		term              string
 		documentFrequency uint64
+		maxTermFrequency  uint32
 	}{
-		{term: "go", documentFrequency: 2},
-		{term: "search", documentFrequency: 1},
+		{term: "go", documentFrequency: 2, maxTermFrequency: 3},
+		{term: "search", documentFrequency: 1, maxTermFrequency: 1},
 	}
 	if len(plan.terms) != len(want) {
 		t.Fatalf("planned terms = %d, want %d", len(plan.terms), len(want))
@@ -66,6 +67,10 @@ func TestBuildDiskQueryPlanUsesPreparedTerms(t *testing.T) {
 		wantIDF := bm25IDF(idx.DocumentsWithTerms(), wantTerm.documentFrequency)
 		if math.Float64bits(got.idf) != math.Float64bits(wantIDF) {
 			t.Fatalf("%q IDF = %v, want %v", got.term, got.idf, wantIDF)
+		}
+		wantUpperBound := bm25TermUpperBound(wantIDF, wantTerm.maxTermFrequency, plan.averageDocumentLength)
+		if math.Float64bits(got.upperBound) != math.Float64bits(wantUpperBound) {
+			t.Fatalf("%q upper bound = %v, want %v", got.term, got.upperBound, wantUpperBound)
 		}
 	}
 }

@@ -14,9 +14,10 @@ type diskQueryPlan struct {
 }
 
 type diskQueryTerm struct {
-	term   string
-	idf    float64
-	cursor *indexfile.Cursor
+	term       string
+	idf        float64
+	upperBound float64
+	cursor     *indexfile.Cursor
 }
 
 func prepareQuery(query string) ([]string, error) {
@@ -44,10 +45,12 @@ func buildDiskQueryPlan(idx *indexfile.Index, query string) (diskQueryPlan, erro
 		if !found {
 			continue
 		}
+		idf := bm25IDF(idx.DocumentsWithTerms(), cursor.DocumentFrequency())
 		plan.terms = append(plan.terms, diskQueryTerm{
-			term:   term,
-			idf:    bm25IDF(idx.DocumentsWithTerms(), cursor.DocumentFrequency()),
-			cursor: cursor,
+			term:       term,
+			idf:        idf,
+			upperBound: bm25TermUpperBound(idf, cursor.MaxTermFrequency(), plan.averageDocumentLength),
+			cursor:     cursor,
 		})
 	}
 	return plan, nil
