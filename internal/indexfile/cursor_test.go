@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"math"
+	"math/rand/v2"
 	"strconv"
 	"testing"
 
@@ -136,6 +138,75 @@ func TestCursorNextRejectsNonIncreasingBlocks(t *testing.T) {
 	}
 }
 
+func TestCursorCodecsMatchLogicalTraces(t *testing.T) {
+	counts := []int{1, 127, 128, 129, 257}
+	countGenerator := rand.New(rand.NewPCG(1, 1))
+	for range 27 {
+		counts = append(counts, countGenerator.IntN(512)+1)
+	}
+
+	for caseIndex, count := range counts {
+		name := strconv.Itoa(caseIndex) + "-" + strconv.Itoa(count)
+		t.Run(name, func(t *testing.T) {
+			generator := rand.New(rand.NewPCG(2, uint64(caseIndex+1)))
+			postings := generatedCursorPostings(generator, count)
+			operations := generatedCursorOperations(generator, postings)
+
+			cursors := []struct {
+				name   string
+				cursor *Cursor
+			}{
+				{"raw", newCursorForTest(t, postings, PostingsCodecRaw)},
+				{"vbyte", newCursorForTest(t, postings, PostingsCodecVByte)},
+			}
+
+			position := 0
+			for step, operation := range operations {
+				if operation.advance {
+					for position < len(postings) && postings[position].DocumentID < operation.target {
+						position++
+					}
+				} else if position < len(postings) {
+					position++
+				}
+
+				wantValid := position < len(postings)
+				var want index.Posting
+				if wantValid {
+					want = postings[position]
+				}
+				for _, candidate := range cursors {
+					var valid bool
+					var err error
+					if operation.advance {
+						valid, err = candidate.cursor.Advance(operation.target)
+					} else {
+						valid, err = candidate.cursor.Next()
+					}
+					if err != nil {
+						t.Fatalf("%s step %d operation %+v: %v", candidate.name, step, operation, err)
+					}
+					got, current := candidate.cursor.Current()
+					if valid != wantValid || current != wantValid || got != want {
+						t.Fatalf(
+							"%s step %d operation %+v = (%+v, %t, %t), want (%+v, %t, %t)",
+							candidate.name,
+							step,
+							operation,
+							got,
+							current,
+							valid,
+							want,
+							wantValid,
+							wantValid,
+						)
+					}
+				}
+			}
+		})
+	}
+}
+
 func cursorTestPostings(count int) []index.Posting {
 	postings := make([]index.Posting, count)
 	for position := range postings {
@@ -158,10 +229,19 @@ func currentCursorPosting(t *testing.T, cursor *Cursor) index.Posting {
 
 func newRawCursorForTest(t *testing.T, postings []index.Posting) *Cursor {
 	t.Helper()
+	return newCursorForTest(t, postings, PostingsCodecRaw)
+}
+
+func newCursorForTest(t *testing.T, postings []index.Posting, codec PostingsCodec) *Cursor {
+	t.Helper()
 
 	var encoded bytes.Buffer
 	next := 0
-	postingsBytes, err := writeRawPostingList(&encoded, uint64(len(postings)), func() (index.Posting, error) {
+	writePostingList := writeRawPostingList
+	if codec == PostingsCodecVByte {
+		writePostingList = writeVBytePostingList
+	}
+	postingsBytes, err := writePostingList(&encoded, uint64(len(postings)), func() (index.Posting, error) {
 		if next == len(postings) {
 			return index.Posting{}, io.EOF
 		}
@@ -185,7 +265,7 @@ func newRawCursorForTest(t *testing.T, postings []index.Posting) *Cursor {
 	cursor := &Cursor{
 		input:             bytes.NewReader(data),
 		term:              termEntry{documentFrequency: uint64(len(postings)), postingsOffset: fileHeaderBytes, postingsBytes: postingsBytes},
-		codec:             PostingsCodecRaw,
+		codec:             codec,
 		documentLengths:   documentLengths,
 		nextBlockOffset:   fileHeaderBytes,
 		postingsRemaining: uint64(len(postings)),
@@ -194,4 +274,65 @@ func newRawCursorForTest(t *testing.T, postings []index.Posting) *Cursor {
 		t.Fatal(err)
 	}
 	return cursor
+}
+
+type cursorOperation struct {
+	advance bool
+	target  index.DocumentID
+}
+
+func generatedCursorPostings(generator *rand.Rand, count int) []index.Posting {
+	postings := make([]index.Posting, count)
+	documentID := index.DocumentID(generator.Uint32N(300) + 1)
+	for position := range postings {
+		if position != 0 {
+			documentID += index.DocumentID(generator.Uint32N(300) + 1)
+		}
+		postings[position] = index.Posting{
+			DocumentID: documentID,
+			Frequency:  generator.Uint32N(300) + 1,
+		}
+	}
+	return postings
+}
+
+func generatedCursorOperations(generator *rand.Rand, postings []index.Posting) []cursorOperation {
+	operations := []cursorOperation{
+		{advance: true, target: postings[0].DocumentID},
+		{advance: true, target: 0},
+	}
+	if len(postings) > 1 {
+		operations = append(operations, cursorOperation{
+			advance: true,
+			target:  postings[1].DocumentID - 1,
+		})
+	}
+	if len(postings) > postingsPerBlock {
+		operations = append(
+			operations,
+			cursorOperation{advance: true, target: postings[postingsPerBlock-1].DocumentID},
+			cursorOperation{},
+		)
+	}
+
+	for range 64 {
+		if generator.IntN(3) == 0 {
+			operations = append(operations, cursorOperation{})
+			continue
+		}
+		target := postings[generator.IntN(len(postings))].DocumentID
+		switch generator.IntN(3) {
+		case 0:
+			target--
+		case 1:
+			target++
+		}
+		operations = append(operations, cursorOperation{advance: true, target: target})
+	}
+	return append(
+		operations,
+		cursorOperation{advance: true, target: math.MaxUint32},
+		cursorOperation{},
+		cursorOperation{advance: true, target: 0},
+	)
 }
