@@ -99,13 +99,13 @@ func TestCursorNext(t *testing.T) {
 }
 
 func TestCursorNextFailureInvalidatesCursor(t *testing.T) {
-	cursor := newRawCursorForTest(t, cursorTestPostings(rawPostingsPerBlock+1))
+	cursor := newRawCursorForTest(t, cursorTestPostings(postingsPerBlock+1))
 	readErr := errors.New("read failed")
 	cursor.input = readerAtFunc(func([]byte, int64) (int, error) {
 		return 0, readErr
 	})
 
-	for range rawPostingsPerBlock - 1 {
+	for range postingsPerBlock - 1 {
 		valid, err := cursor.Next()
 		if err != nil || !valid {
 			t.Fatalf("Next() = (%t, %v), want (true, nil)", valid, err)
@@ -120,11 +120,11 @@ func TestCursorNextFailureInvalidatesCursor(t *testing.T) {
 }
 
 func TestCursorNextRejectsNonIncreasingBlocks(t *testing.T) {
-	postings := cursorTestPostings(rawPostingsPerBlock + 1)
-	postings[rawPostingsPerBlock].DocumentID = 0
+	postings := cursorTestPostings(postingsPerBlock + 1)
+	postings[postingsPerBlock].DocumentID = 0
 	cursor := newRawCursorForTest(t, postings)
 
-	for range rawPostingsPerBlock - 1 {
+	for range postingsPerBlock - 1 {
 		if _, err := cursor.Next(); err != nil {
 			t.Fatal(err)
 		}

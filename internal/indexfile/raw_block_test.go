@@ -29,7 +29,7 @@ func TestWriteRawPostingBlockBytes(t *testing.T) {
 }
 
 func TestRawPostingBlockCount(t *testing.T) {
-	postings := make([]index.Posting, rawPostingsPerBlock)
+	postings := make([]index.Posting, postingsPerBlock)
 	for documentID := range postings {
 		postings[documentID] = index.Posting{DocumentID: index.DocumentID(documentID), Frequency: 1}
 	}
@@ -38,11 +38,11 @@ func TestRawPostingBlockCount(t *testing.T) {
 	if err := writeRawPostingBlock(&encoded, postings); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := encoded.Len(), rawPostingBlockHeaderBytes+rawPostingsPerBlock*rawPostingBytes; got != want {
+	if got, want := encoded.Len(), postingBlockHeaderBytes+postingsPerBlock*rawPostingBytes; got != want {
 		t.Fatalf("block length = %d, want %d", got, want)
 	}
-	if got := binary.LittleEndian.Uint32(encoded.Bytes()[4:8]); got != rawPostingsPerBlock*rawPostingBytes {
-		t.Fatalf("payload length = %d, want %d", got, rawPostingsPerBlock*rawPostingBytes)
+	if got := binary.LittleEndian.Uint32(encoded.Bytes()[4:8]); got != postingsPerBlock*rawPostingBytes {
+		t.Fatalf("payload length = %d, want %d", got, postingsPerBlock*rawPostingBytes)
 	}
 	decoded, err := readRawPostingBlock(bytes.NewReader(encoded.Bytes()), len(postings), uint64(len(postings)))
 	if err != nil {
@@ -55,7 +55,7 @@ func TestRawPostingBlockCount(t *testing.T) {
 	if err := writeRawPostingBlock(&bytes.Buffer{}, nil); err == nil {
 		t.Fatal("writeRawPostingBlock() error = nil for empty block")
 	}
-	if err := writeRawPostingBlock(&bytes.Buffer{}, make([]index.Posting, rawPostingsPerBlock+1)); err == nil {
+	if err := writeRawPostingBlock(&bytes.Buffer{}, make([]index.Posting, postingsPerBlock+1)); err == nil {
 		t.Fatal("writeRawPostingBlock() error = nil for oversized block")
 	}
 }
@@ -96,7 +96,7 @@ func TestReadRawPostingBlockRejectsInvalidData(t *testing.T) {
 		totalDocuments uint64
 	}{
 		{name: "zero count", postingCount: 0, totalDocuments: 2},
-		{name: "oversized count", postingCount: rawPostingsPerBlock + 1, totalDocuments: 2},
+		{name: "oversized count", postingCount: postingsPerBlock + 1, totalDocuments: 2},
 		{name: "wrong payload length", data: wrongPayloadLength, postingCount: 2, totalDocuments: 2},
 		{name: "out-of-range endpoint", data: []byte(rawPostingBlockFixture), postingCount: 2, totalDocuments: 1},
 		{name: "zero frequency", data: zeroFrequency, postingCount: 2, totalDocuments: 2},

@@ -66,7 +66,7 @@ func TestVerifyPostingsFileRejectsInconsistentDocumentLengths(t *testing.T) {
 
 func TestVerifyPostingsFileValidatesChecksum(t *testing.T) {
 	data, terms := postingVerificationFixture(t)
-	data[fileHeaderBytes+rawPostingBlockHeaderBytes+4] = 2
+	data[fileHeaderBytes+postingBlockHeaderBytes+4] = 2
 	if err := verifyPostingsFile(
 		context.Background(),
 		bytes.NewReader(data),
@@ -85,7 +85,7 @@ func TestVerifyPostingsFileCancellation(t *testing.T) {
 	defer cancel()
 	input := &cancelAfterReader{
 		Reader: bytes.NewReader(data),
-		after:  fileHeaderBytes + rawPostingBlockHeaderBytes,
+		after:  fileHeaderBytes + postingBlockHeaderBytes,
 		cancel: cancel,
 	}
 	err := verifyPostingsFile(ctx, input, int64(len(data)), PostingsCodecRaw, terms, []uint32{2, 3})

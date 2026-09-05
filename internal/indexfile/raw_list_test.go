@@ -32,8 +32,8 @@ func TestRawPostingListPartitionsBlocks(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			blockCount := (postingCount + rawPostingsPerBlock - 1) / rawPostingsPerBlock
-			wantBytes := uint64(postingCount*rawPostingBytes + blockCount*rawPostingBlockHeaderBytes)
+			blockCount := (postingCount + postingsPerBlock - 1) / postingsPerBlock
+			wantBytes := uint64(postingCount*rawPostingBytes + blockCount*postingBlockHeaderBytes)
 			if writtenBytes != wantBytes || uint64(encoded.Len()) != wantBytes {
 				t.Fatalf("encoded bytes = %d, returned = %d, want %d", encoded.Len(), writtenBytes, wantBytes)
 			}
@@ -77,17 +77,17 @@ func TestReadRawPostingListRejectsInvalidData(t *testing.T) {
 		t.Fatal("readRawPostingList() error = nil for wrong byte length")
 	}
 
-	postings := make([]index.Posting, rawPostingsPerBlock+1)
-	for position := range rawPostingsPerBlock {
+	postings := make([]index.Posting, postingsPerBlock+1)
+	for position := range postingsPerBlock {
 		postings[position] = index.Posting{DocumentID: index.DocumentID(position + 1), Frequency: 1}
 	}
-	postings[rawPostingsPerBlock] = index.Posting{DocumentID: 0, Frequency: 1}
+	postings[postingsPerBlock] = index.Posting{DocumentID: 0, Frequency: 1}
 
 	var encoded bytes.Buffer
-	if err := writeRawPostingBlock(&encoded, postings[:rawPostingsPerBlock]); err != nil {
+	if err := writeRawPostingBlock(&encoded, postings[:postingsPerBlock]); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeRawPostingBlock(&encoded, postings[rawPostingsPerBlock:]); err != nil {
+	if err := writeRawPostingBlock(&encoded, postings[postingsPerBlock:]); err != nil {
 		t.Fatal(err)
 	}
 	if err := readRawPostingList(

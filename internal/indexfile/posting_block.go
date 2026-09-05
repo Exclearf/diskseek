@@ -10,6 +10,7 @@ import (
 const (
 	postingBlockHeaderBytes = 8
 	postingsPerBlock        = 128
+	maxPostingsPerList      = uint64(1) << 32
 )
 
 type postingBlockHeader struct {

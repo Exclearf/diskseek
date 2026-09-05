@@ -56,7 +56,7 @@ func TestOpenDoesNotScanLazyFiles(t *testing.T) {
 		file   string
 		offset int
 	}{
-		{"postings", PostingsFileName, fileHeaderBytes + rawPostingBlockHeaderBytes},
+		{"postings", PostingsFileName, fileHeaderBytes + postingBlockHeaderBytes},
 		{"external ID offsets", DocumentOffsetsFileName, fileHeaderBytes},
 	}
 

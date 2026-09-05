@@ -9,7 +9,7 @@ import (
 )
 
 func TestCursorAdvanceMatchesLinearOracle(t *testing.T) {
-	postings := spacedCursorTestPostings(rawPostingsPerBlock*2 + 4)
+	postings := spacedCursorTestPostings(postingsPerBlock*2 + 4)
 
 	lastDocumentID := postings[len(postings)-1].DocumentID
 	for target := index.DocumentID(0); target <= lastDocumentID+1; target++ {
@@ -31,7 +31,7 @@ func TestCursorAdvanceMatchesLinearOracle(t *testing.T) {
 }
 
 func TestCursorAdvanceOperationSequence(t *testing.T) {
-	postings := spacedCursorTestPostings(rawPostingsPerBlock*2 + 4)
+	postings := spacedCursorTestPostings(postingsPerBlock*2 + 4)
 	cursor := newRawCursorForTest(t, postings)
 
 	for _, step := range []struct {
@@ -85,7 +85,7 @@ func TestCursorAdvanceOperationSequence(t *testing.T) {
 }
 
 func TestCursorAdvanceSkipsIntermediatePayload(t *testing.T) {
-	cursor := newRawCursorForTest(t, spacedCursorTestPostings(rawPostingsPerBlock*2+4))
+	cursor := newRawCursorForTest(t, spacedCursorTestPostings(postingsPerBlock*2+4))
 
 	valid, err := cursor.Advance(511)
 	if err != nil || !valid {
@@ -101,8 +101,8 @@ func TestCursorAdvanceSkipsIntermediatePayload(t *testing.T) {
 		BlockHeadersRead: 3,
 		BlocksSkipped:    1,
 		BlocksDecoded:    2,
-		PostingsDecoded:  rawPostingsPerBlock + 4,
-		BytesRequested:   3*postingBlockHeaderBytes + (rawPostingsPerBlock+4)*rawPostingBytes,
+		PostingsDecoded:  postingsPerBlock + 4,
+		BytesRequested:   3*postingBlockHeaderBytes + (postingsPerBlock+4)*rawPostingBytes,
 	}
 	if got := cursor.Stats(); got != want {
 		t.Fatalf("Stats() = %+v, want %+v", got, want)
@@ -118,7 +118,7 @@ func TestCursorAdvanceReadFailureInvalidatesCursor(t *testing.T) {
 		{name: "payload", failedRead: 2},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			cursor := newRawCursorForTest(t, cursorTestPostings(rawPostingsPerBlock+1))
+			cursor := newRawCursorForTest(t, cursorTestPostings(postingsPerBlock+1))
 			input := cursor.input
 			readErr := errors.New("read failed")
 			reads := 0
@@ -130,7 +130,7 @@ func TestCursorAdvanceReadFailureInvalidatesCursor(t *testing.T) {
 				return input.ReadAt(data, offset)
 			})
 
-			valid, err := cursor.Advance(rawPostingsPerBlock)
+			valid, err := cursor.Advance(postingsPerBlock)
 			if valid || !errors.Is(err, readErr) {
 				t.Fatalf("Advance() = (%t, %v), want (false, %v)", valid, err, readErr)
 			}

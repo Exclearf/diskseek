@@ -9,11 +9,7 @@ import (
 	"github.com/Exclearf/diskseek/internal/index"
 )
 
-const (
-	rawPostingsPerBlock        = postingsPerBlock
-	rawPostingBlockHeaderBytes = postingBlockHeaderBytes
-	rawPostingBytes            = 8
-)
+const rawPostingBytes = 8
 
 func writeRawPostingBlock(writer io.Writer, postings []index.Posting) error {
 	payloadBytes, err := rawPostingBlockPayloadBytes(len(postings))
@@ -21,17 +17,17 @@ func writeRawPostingBlock(writer io.Writer, postings []index.Posting) error {
 		return err
 	}
 
-	var encoded [rawPostingBlockHeaderBytes + rawPostingsPerBlock*rawPostingBytes]byte
+	var encoded [postingBlockHeaderBytes + postingsPerBlock*rawPostingBytes]byte
 	binary.LittleEndian.PutUint32(encoded[0:4], uint32(postings[len(postings)-1].DocumentID))
 	binary.LittleEndian.PutUint32(encoded[4:8], uint32(payloadBytes))
 
 	for position, posting := range postings {
-		offset := rawPostingBlockHeaderBytes + position*rawPostingBytes
+		offset := postingBlockHeaderBytes + position*rawPostingBytes
 		binary.LittleEndian.PutUint32(encoded[offset:offset+4], uint32(posting.DocumentID))
 		binary.LittleEndian.PutUint32(encoded[offset+4:offset+8], posting.Frequency)
 	}
 
-	if _, err := writer.Write(encoded[:rawPostingBlockHeaderBytes+payloadBytes]); err != nil {
+	if _, err := writer.Write(encoded[:postingBlockHeaderBytes+payloadBytes]); err != nil {
 		return fmt.Errorf("write raw posting block: %w", err)
 	}
 	return nil
@@ -43,7 +39,7 @@ func readRawPostingBlock(reader io.Reader, postingCount int, totalDocuments uint
 		return nil, err
 	}
 
-	var encodedHeader [rawPostingBlockHeaderBytes]byte
+	var encodedHeader [postingBlockHeaderBytes]byte
 	if _, err := io.ReadFull(reader, encodedHeader[:]); err != nil {
 		return nil, fmt.Errorf("read raw posting block header: %w", err)
 	}
@@ -55,7 +51,7 @@ func readRawPostingBlock(reader io.Reader, postingCount int, totalDocuments uint
 		return nil, errors.New("invalid raw posting block payload length")
 	}
 
-	var payload [rawPostingsPerBlock * rawPostingBytes]byte
+	var payload [postingsPerBlock * rawPostingBytes]byte
 	if _, err := io.ReadFull(reader, payload[:payloadBytes]); err != nil {
 		return nil, fmt.Errorf("read raw posting block payload: %w", err)
 	}
@@ -89,8 +85,8 @@ func decodeRawPostingPayload(payload []byte, postings []index.Posting) error {
 }
 
 func rawPostingBlockPayloadBytes(postingCount int) (int, error) {
-	if postingCount < 1 || postingCount > rawPostingsPerBlock {
-		return 0, fmt.Errorf("raw posting block must contain 1 to %d postings", rawPostingsPerBlock)
+	if postingCount < 1 || postingCount > postingsPerBlock {
+		return 0, fmt.Errorf("raw posting block must contain 1 to %d postings", postingsPerBlock)
 	}
 	return postingCount * rawPostingBytes, nil
 }

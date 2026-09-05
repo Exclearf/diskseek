@@ -8,8 +8,6 @@ import (
 	"github.com/Exclearf/diskseek/internal/index"
 )
 
-const maxPostingsPerList = uint64(1) << 32
-
 func writeRawPostingList(
 	writer io.Writer,
 	postingCount uint64,
@@ -20,10 +18,10 @@ func writeRawPostingList(
 		return 0, err
 	}
 
-	var block [rawPostingsPerBlock]index.Posting
+	var block [postingsPerBlock]index.Posting
 	remaining := postingCount
 	for remaining != 0 {
-		currentCount := int(min(remaining, uint64(rawPostingsPerBlock)))
+		currentCount := int(min(remaining, uint64(postingsPerBlock)))
 		for position := range currentCount {
 			posting, err := nextPosting()
 			if err != nil {
@@ -59,7 +57,7 @@ func readRawPostingList(
 	remaining := postingCount
 	var previousDocumentID index.DocumentID
 	for blockIndex := 0; remaining != 0; blockIndex++ {
-		currentCount := int(min(remaining, uint64(rawPostingsPerBlock)))
+		currentCount := int(min(remaining, uint64(postingsPerBlock)))
 		block, err := readRawPostingBlock(reader, currentCount, totalDocuments)
 		if err != nil {
 			return fmt.Errorf("read raw posting block %d: %w", blockIndex, err)
@@ -82,6 +80,6 @@ func rawPostingListBytes(postingCount uint64) (uint64, error) {
 	if postingCount == 0 || postingCount > maxPostingsPerList {
 		return 0, errors.New("invalid raw posting-list count")
 	}
-	blockCount := (postingCount-1)/uint64(rawPostingsPerBlock) + 1
-	return postingCount*uint64(rawPostingBytes) + blockCount*uint64(rawPostingBlockHeaderBytes), nil
+	blockCount := (postingCount-1)/uint64(postingsPerBlock) + 1
+	return postingCount*uint64(rawPostingBytes) + blockCount*uint64(postingBlockHeaderBytes), nil
 }
