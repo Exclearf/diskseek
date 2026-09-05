@@ -94,17 +94,3 @@ func readRawPostingBlockPayloadAt(
 	}
 	return nil
 }
-
-func readAtExact(input io.ReaderAt, data []byte, offset int64) error {
-	read, err := input.ReadAt(data, offset)
-	if read != len(data) {
-		if err != nil {
-			return err
-		}
-		return io.ErrUnexpectedEOF
-	}
-	if err != nil && err != io.EOF {
-		return err
-	}
-	return nil
-}
