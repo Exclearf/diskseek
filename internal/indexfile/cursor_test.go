@@ -94,6 +94,9 @@ func TestCursorNext(t *testing.T) {
 					t.Fatalf("Next() = (%t, %v), want (false, nil)", valid, err)
 				}
 			}
+			if got, want := cursor.Stats().NextCalls, uint64(len(postings)+2); got != want {
+				t.Fatalf("NextCalls = %d, want %d", got, want)
+			}
 		})
 	}
 }

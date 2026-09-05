@@ -15,7 +15,7 @@ import (
 func TestExhaustiveDAATTraversesPostingUnion(t *testing.T) {
 	idx := openDiskTestIndex(t, filepath.Join("..", "indexfile", "testdata", "golden-v1", "vbyte"))
 
-	got, err := searchDAAT(idx, "search go", 10)
+	got, stats, err := searchDAAT(idx, "search go", 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,6 +39,14 @@ func TestExhaustiveDAATTraversesPostingUnion(t *testing.T) {
 			t.Fatalf("result %d = %+v, want %+v", position, got[position], want[position])
 		}
 	}
+	if wantStats := (daatStats{
+		PostingsDecoded:  3,
+		NextCalls:        3,
+		CandidatesScored: 2,
+		BytesRequested:   22,
+	}); stats != wantStats {
+		t.Fatalf("stats = %+v, want %+v", stats, wantStats)
+	}
 }
 
 func TestExhaustiveDAATEmptyResults(t *testing.T) {
@@ -53,7 +61,7 @@ func TestExhaustiveDAATEmptyResults(t *testing.T) {
 		{name: "unknown term", query: "missing", k: 10},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			results, err := searchDAAT(idx, test.query, test.k)
+			results, _, err := searchDAAT(idx, test.query, test.k)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -72,7 +80,7 @@ func TestExhaustiveDAATDiscardsPartialResults(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		results, err := searchDAAT(idx, "go", 10)
+		results, _, err := searchDAAT(idx, "go", 10)
 		if err == nil || results != nil {
 			t.Fatalf("searchDAAT() = (%v, %v), want (nil, error)", results, err)
 		}
@@ -89,7 +97,7 @@ func TestExhaustiveDAATDiscardsPartialResults(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		results, err := executeDAAT(idx, plan, 10)
+		results, _, err := executeDAAT(idx, plan, 10)
 		if err == nil || results != nil {
 			t.Fatalf("executeDAAT() = (%v, %v), want (nil, error)", results, err)
 		}
@@ -102,7 +110,7 @@ func TestExhaustiveDAATDiscardsPartialResults(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		results, err := searchDAAT(idx, "go", 10)
+		results, _, err := searchDAAT(idx, "go", 10)
 		if err == nil || results != nil {
 			t.Fatalf("searchDAAT() = (%v, %v), want (nil, error)", results, err)
 		}

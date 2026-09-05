@@ -7,20 +7,29 @@ import (
 	"github.com/Exclearf/diskseek/internal/indexfile"
 )
 
-func searchDAAT(idx *indexfile.Index, query string, k int) ([]result, error) {
+type daatStats struct {
+	PostingsDecoded  uint64
+	NextCalls        uint64
+	AdvanceCalls     uint64
+	CandidatesScored uint64
+	BytesRequested   uint64
+}
+
+func searchDAAT(idx *indexfile.Index, query string, k int) ([]result, daatStats, error) {
 	if k <= 0 {
-		return nil, nil
+		return nil, daatStats{}, nil
 	}
 
 	plan, err := buildDiskQueryPlan(idx, query)
 	if err != nil {
-		return nil, err
+		return nil, daatStats{}, err
 	}
 	return executeDAAT(idx, plan, k)
 }
 
-func executeDAAT(idx *indexfile.Index, plan diskQueryPlan, k int) ([]result, error) {
+func executeDAAT(idx *indexfile.Index, plan diskQueryPlan, k int) ([]result, daatStats, error) {
 	collector := newTopK(k)
+	var candidatesScored uint64
 	for {
 		documentID, found := nextCandidate(plan.terms)
 		if !found {
@@ -42,21 +51,31 @@ func executeDAAT(idx *indexfile.Index, plan diskQueryPlan, k int) ([]result, err
 				plan.averageDocumentLength,
 			)
 			if _, err := term.cursor.Next(); err != nil {
-				return nil, fmt.Errorf("advance %q postings: %w", term.term, err)
+				return nil, daatStats{}, fmt.Errorf("advance %q postings: %w", term.term, err)
 			}
 		}
 		collector.add(result{DocumentID: documentID, Score: score})
+		candidatesScored++
 	}
 
 	results := collector.finish()
 	for position := range results {
 		externalID, err := idx.ExternalID(results[position].DocumentID)
 		if err != nil {
-			return nil, fmt.Errorf("resolve document %d: %w", results[position].DocumentID, err)
+			return nil, daatStats{}, fmt.Errorf("resolve document %d: %w", results[position].DocumentID, err)
 		}
 		results[position].ExternalID = externalID
 	}
-	return results, nil
+
+	stats := daatStats{CandidatesScored: candidatesScored}
+	for _, term := range plan.terms {
+		cursorStats := term.cursor.Stats()
+		stats.PostingsDecoded += cursorStats.PostingsDecoded
+		stats.NextCalls += cursorStats.NextCalls
+		stats.AdvanceCalls += cursorStats.AdvanceCalls
+		stats.BytesRequested += cursorStats.BytesRequested
+	}
+	return results, stats, nil
 }
 
 func nextCandidate(terms []diskQueryTerm) (index.DocumentID, bool) {

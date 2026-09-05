@@ -22,6 +22,7 @@ type Cursor struct {
 }
 
 type CursorStats struct {
+	NextCalls        uint64
 	AdvanceCalls     uint64
 	BlockHeadersRead uint64
 	BlocksSkipped    uint64
@@ -66,6 +67,7 @@ func (c *Cursor) Stats() CursorStats {
 }
 
 func (c *Cursor) Next() (bool, error) {
+	c.stats.NextCalls++
 	if c.blockPosition >= c.blockPostingCount {
 		return false, nil
 	}
