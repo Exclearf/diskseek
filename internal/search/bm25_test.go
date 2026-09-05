@@ -35,3 +35,15 @@ func TestBM25TermScore(t *testing.T) {
 		})
 	}
 }
+
+func TestBM25TermScoreMaterialization(t *testing.T) {
+	// These values differ by one bit if the second contribution is fused with the sum.
+	const idf = 0.1
+	score := bm25TermScore(idf, 1, 4, 4)
+	score += bm25TermScore(idf, 4, 4, 4)
+
+	const wantBits = 0x3fd05397829cbc14
+	if got := math.Float64bits(score); got != wantBits {
+		t.Fatalf("score bits = %#x, want %#x", got, uint64(wantBits))
+	}
+}

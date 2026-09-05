@@ -22,5 +22,5 @@ func bm25TermScore(
 	lengthNormalization := (1 - bm25B) + bm25B*lengthRatio
 	numerator := float64(termFrequency) * (bm25K1 + 1)
 	denominator := float64(termFrequency) + bm25K1*lengthNormalization
-	return idf * (numerator / denominator)
+	return float64(idf * (numerator / denominator))
 }

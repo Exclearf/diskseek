@@ -1,16 +1,10 @@
 package search
 
 import (
-	"cmp"
 	"slices"
 
 	"github.com/Exclearf/diskseek/internal/index"
 )
-
-type result struct {
-	DocumentID index.DocumentID
-	Score      float64
-}
 
 func referenceSearch(idx *index.Index, query string, k int) ([]result, error) {
 	terms, err := prepareQuery(query)
@@ -52,14 +46,4 @@ func referenceSearch(idx *index.Index, query string, k int) ([]result, error) {
 		results = results[:k]
 	}
 	return results, nil
-}
-
-func compareResults(left, right result) int {
-	if left.Score > right.Score {
-		return -1
-	}
-	if left.Score < right.Score {
-		return 1
-	}
-	return cmp.Compare(left.DocumentID, right.DocumentID)
 }
