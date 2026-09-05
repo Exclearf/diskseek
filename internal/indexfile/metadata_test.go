@@ -14,12 +14,41 @@ var (
 		Postings: FileMetadata{Length: 52, Checksum: 0x3d5463ec},
 		Codec:    PostingsCodecRaw,
 	}
+	goldenVByteTermMetadata = TermFilesMetadata{
+		Terms:    FileMetadata{Length: 60, Checksum: 0x5159752a},
+		Postings: FileMetadata{Length: 34, Checksum: 0x8827a46a},
+		Codec:    PostingsCodecVByte,
+	}
 	goldenDocumentMetadata = DocumentFilesMetadata{
 		Lengths: FileMetadata{Length: 20, Checksum: 0x00e08ad4},
 		Offsets: FileMetadata{Length: 36, Checksum: 0xfeed8a1b},
 		Data:    FileMetadata{Length: 14, Checksum: 0x20226602},
 	}
 )
+
+func TestWriteMetadataFiles(t *testing.T) {
+	tests := []struct {
+		name      string
+		directory string
+		terms     TermFilesMetadata
+	}{
+		{"raw", goldenIndexDirectory, goldenTermMetadata},
+		{"vbyte", goldenVByteIndexDirectory, goldenVByteTermMetadata},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var output bytes.Buffer
+			if err := WriteMetadataFile(&output, test.terms, goldenDocumentMetadata); err != nil {
+				t.Fatal(err)
+			}
+
+			want := readGoldenIndexFileFrom(t, test.directory, MetadataFileName)
+			if !bytes.Equal(output.Bytes(), want) {
+				t.Fatalf("metadata file = % x, want % x", output.Bytes(), want)
+			}
+		})
+	}
+}
 
 func TestWriteMetadataFileRejectsUnsupportedPostingsCodec(t *testing.T) {
 	terms := goldenTermMetadata
@@ -37,6 +66,21 @@ func TestReadMetadataFile(t *testing.T) {
 	}
 	want := indexMetadata{
 		Terms:     goldenTermMetadata,
+		Documents: goldenDocumentMetadata,
+	}
+	if metadata != want {
+		t.Fatalf("metadata = %+v, want %+v", metadata, want)
+	}
+}
+
+func TestReadVByteMetadataFile(t *testing.T) {
+	data := readGoldenIndexFileFrom(t, goldenVByteIndexDirectory, MetadataFileName)
+	metadata, err := readMetadataFile(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := indexMetadata{
+		Terms:     goldenVByteTermMetadata,
 		Documents: goldenDocumentMetadata,
 	}
 	if metadata != want {
@@ -88,42 +132,4 @@ func mutateMetadata(t *testing.T, mutate func([]byte)) []byte {
 	checksum := crc32.Checksum(data[:len(data)-fileFooterBytes], crc32cTable)
 	binary.LittleEndian.PutUint32(data[len(data)-fileFooterBytes:], checksum)
 	return data
-}
-
-func TestWriteMetadataFile(t *testing.T) {
-	var output bytes.Buffer
-	if err := WriteMetadataFile(&output, goldenTermMetadata, goldenDocumentMetadata); err != nil {
-		t.Fatal(err)
-	}
-
-	want := readGoldenIndexFile(t, MetadataFileName)
-	if !bytes.Equal(output.Bytes(), want) {
-		t.Fatalf("metadata file = % x, want % x", output.Bytes(), want)
-	}
-}
-
-func TestWriteMetadataFileRecordsPostingsCodec(t *testing.T) {
-	terms := goldenTermMetadata
-	terms.Codec = PostingsCodecVByte
-
-	var output bytes.Buffer
-	if err := WriteMetadataFile(&output, terms, goldenDocumentMetadata); err != nil {
-		t.Fatal(err)
-	}
-	if got := binary.LittleEndian.Uint32(output.Bytes()[fileHeaderBytes+4 : fileHeaderBytes+8]); got != 2 {
-		t.Fatalf("postings codec ID = %d, want 2", got)
-	}
-}
-
-func TestReadMetadataFileSupportsVBytePostings(t *testing.T) {
-	data := mutateMetadata(t, func(data []byte) {
-		binary.LittleEndian.PutUint32(data[12:16], 2)
-	})
-	metadata, err := readMetadataFile(bytes.NewReader(data), int64(len(data)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if metadata.Terms.Codec != PostingsCodecVByte {
-		t.Fatalf("postings codec = %d, want %d", metadata.Terms.Codec, PostingsCodecVByte)
-	}
 }

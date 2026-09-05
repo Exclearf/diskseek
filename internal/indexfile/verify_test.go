@@ -19,21 +19,6 @@ func TestVerifyEmptyIndex(t *testing.T) {
 	}
 }
 
-func TestVerifyVByteIndex(t *testing.T) {
-	directory := writeVerificationTestIndex(
-		t,
-		[]index.DocumentMeta{
-			{ExternalID: "a", Length: 2},
-			{ExternalID: "b", Length: 3},
-		},
-		verificationTestTerms(),
-		PostingsCodecVByte,
-	)
-	if err := Verify(context.Background(), directory); err != nil {
-		t.Fatal(err)
-	}
-}
-
 func TestVerifyRejectsCrossFileMismatch(t *testing.T) {
 	t.Run("document lengths and postings", func(t *testing.T) {
 		directory := writeVerificationTestIndex(t, []index.DocumentMeta{

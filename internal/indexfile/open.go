@@ -11,6 +11,7 @@ import (
 
 type Index struct {
 	terms                    map[string]termEntry
+	postingsCodec            PostingsCodec
 	documentLengths          []uint32
 	documentsWithTerms       uint64
 	totalLength              uint64
@@ -139,6 +140,7 @@ func openIndex(
 	}
 	return &Index{
 		terms:                    terms,
+		postingsCodec:            metadata.Terms.Codec,
 		documentLengths:          lengths.values,
 		documentsWithTerms:       lengths.documentsWithTerms,
 		totalLength:              lengths.totalLength,

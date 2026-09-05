@@ -115,6 +115,31 @@ func TestWritePersistentTermFilesReadsRun(t *testing.T) {
 	}
 }
 
+func TestWriteIndexCreatesGoldenCodecDirectories(t *testing.T) {
+	runPath, documentsPath := writeIndexTestSources(t)
+	tests := []struct {
+		name    string
+		fixture string
+		codec   indexfile.PostingsCodec
+	}{
+		{"raw", "raw", indexfile.PostingsCodecRaw},
+		{"vbyte", "vbyte", indexfile.PostingsCodecVByte},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			destination := filepath.Join(t.TempDir(), "index")
+			if err := writeIndex(destination, runPath, documentsPath, test.codec); err != nil {
+				t.Fatal(err)
+			}
+
+			golden := filepath.Join("..", "indexfile", "testdata", "golden-v1", test.fixture)
+			if !maps.EqualFunc(readIndexDirectory(t, destination), readIndexDirectory(t, golden), bytes.Equal) {
+				t.Fatal("written index differs from golden index")
+			}
+		})
+	}
+}
+
 func TestWriteIndexRemovesIncompleteDirectory(t *testing.T) {
 	directory := t.TempDir()
 	runPath := filepath.Join(directory, "run")
@@ -127,7 +152,7 @@ func TestWriteIndexRemovesIncompleteDirectory(t *testing.T) {
 	}
 	destination := filepath.Join(directory, "index")
 
-	if err := writeIndex(destination, runPath, documentsPath, indexfile.PostingsCodecRaw); err == nil {
+	if err := writeIndex(destination, runPath, documentsPath, indexfile.PostingsCodecVByte); err == nil {
 		t.Fatal("writeIndex() error = nil")
 	}
 	if _, err := os.Stat(destination); !errors.Is(err, os.ErrNotExist) {
@@ -143,7 +168,7 @@ func TestWriteIndexPreservesExistingDestination(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := writeIndex(destination, runPath, documentsPath, indexfile.PostingsCodecRaw); err == nil {
+	if err := writeIndex(destination, runPath, documentsPath, indexfile.PostingsCodecVByte); err == nil {
 		t.Fatal("writeIndex() error = nil")
 	}
 	if data, err := os.ReadFile(markerPath); err != nil || string(data) != "keep" {
@@ -191,7 +216,7 @@ func buildPersistentTestIndex(t *testing.T, input []byte, flushTarget uint64) (s
 		t.Fatal(err)
 	}
 	destination := filepath.Join(t.TempDir(), "index")
-	if err := writeIndex(destination, mergedRun, result.documentsPath, indexfile.PostingsCodecRaw); err != nil {
+	if err := writeIndex(destination, mergedRun, result.documentsPath, indexfile.PostingsCodecVByte); err != nil {
 		t.Fatal(err)
 	}
 	return destination, runCount
@@ -255,45 +280,5 @@ func persistentIndexTestDocuments() []index.DocumentMeta {
 	return []index.DocumentMeta{
 		{ExternalID: "a", Length: 2},
 		{ExternalID: "b", Length: 3},
-	}
-}
-
-func TestWriteIndexCreatesCompleteVByteDirectory(t *testing.T) {
-	runPath, documentsPath := writeIndexTestSources(t)
-	destination := filepath.Join(t.TempDir(), "index")
-
-	if err := writeIndex(destination, runPath, documentsPath, indexfile.PostingsCodecVByte); err != nil {
-		t.Fatal(err)
-	}
-
-	entries, err := os.ReadDir(destination)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := []struct {
-		name string
-		size int64
-	}{
-		{"docids.dat", 14},
-		{"docids.off", 36},
-		{"doclens.bin", 20},
-		{"index.meta", 80},
-		{"postings.bin", 34},
-		{"terms.bin", 60},
-	}
-	if len(entries) != len(want) {
-		t.Fatalf("file count = %d, want %d", len(entries), len(want))
-	}
-	for position, entry := range entries {
-		if entry.Name() != want[position].name {
-			t.Fatalf("file %d = %q, want %q", position, entry.Name(), want[position].name)
-		}
-		info, err := entry.Info()
-		if err != nil {
-			t.Fatal(err)
-		}
-		if info.Size() != want[position].size {
-			t.Fatalf("%s size = %d, want %d", entry.Name(), info.Size(), want[position].size)
-		}
 	}
 }

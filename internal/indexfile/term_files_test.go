@@ -137,55 +137,40 @@ func TestWriteTermBodiesRejectsUnsupportedCodec(t *testing.T) {
 }
 
 func TestWriteTermFiles(t *testing.T) {
-	source := termTestSource{terms: []termTestTerm{
-		{
-			term: "go",
-			postings: []index.Posting{
-				{DocumentID: 0, Frequency: 1},
-				{DocumentID: 1, Frequency: 3},
-			},
-		},
-		{
-			term:     "search",
-			postings: []index.Posting{{DocumentID: 0, Frequency: 1}},
-		},
-	}}
-
-	var terms, postings bytes.Buffer
-	metadata, err := WriteTermFiles(
-		&terms,
-		&postings,
-		PostingsCodecRaw,
-		source.nextTerm,
-		source.nextPosting,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if metadata.Codec != PostingsCodecRaw {
-		t.Fatalf("postings codec = %d, want %d", metadata.Codec, PostingsCodecRaw)
-	}
-
 	tests := []struct {
-		name     string
-		got      []byte
-		want     []byte
-		metadata FileMetadata
+		name      string
+		directory string
+		codec     PostingsCodec
+		metadata  TermFilesMetadata
 	}{
-		{"terms", terms.Bytes(), readGoldenIndexFile(t, TermsFileName), metadata.Terms},
-		{"postings", postings.Bytes(), readGoldenIndexFile(t, PostingsFileName), metadata.Postings},
+		{"raw", goldenIndexDirectory, PostingsCodecRaw, goldenTermMetadata},
+		{"vbyte", goldenVByteIndexDirectory, PostingsCodecVByte, goldenVByteTermMetadata},
 	}
-	wantMetadata := []FileMetadata{
-		{Length: 60, Checksum: 0xfd50af02},
-		{Length: 52, Checksum: 0x3d5463ec},
-	}
-	for position, test := range tests {
+	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if !bytes.Equal(test.got, test.want) {
-				t.Fatalf("file = % x, want % x", test.got, test.want)
+			source := termTestSource{terms: verificationTestTerms()}
+			var terms, postings bytes.Buffer
+			metadata, err := WriteTermFiles(
+				&terms,
+				&postings,
+				test.codec,
+				source.nextTerm,
+				source.nextPosting,
+			)
+			if err != nil {
+				t.Fatal(err)
 			}
-			if test.metadata != wantMetadata[position] {
-				t.Fatalf("metadata = %+v, want %+v", test.metadata, wantMetadata[position])
+			if metadata != test.metadata {
+				t.Fatalf("metadata = %+v, want %+v", metadata, test.metadata)
+			}
+
+			wantTerms := readGoldenIndexFileFrom(t, test.directory, TermsFileName)
+			if !bytes.Equal(terms.Bytes(), wantTerms) {
+				t.Fatalf("terms file = % x, want % x", terms.Bytes(), wantTerms)
+			}
+			wantPostings := readGoldenIndexFileFrom(t, test.directory, PostingsFileName)
+			if !bytes.Equal(postings.Bytes(), wantPostings) {
+				t.Fatalf("postings file = % x, want % x", postings.Bytes(), wantPostings)
 			}
 		})
 	}

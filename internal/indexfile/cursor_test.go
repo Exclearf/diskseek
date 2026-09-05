@@ -185,6 +185,7 @@ func newRawCursorForTest(t *testing.T, postings []index.Posting) *Cursor {
 	cursor := &Cursor{
 		input:             bytes.NewReader(data),
 		term:              termEntry{documentFrequency: uint64(len(postings)), postingsOffset: fileHeaderBytes, postingsBytes: postingsBytes},
+		codec:             PostingsCodecRaw,
 		documentLengths:   documentLengths,
 		nextBlockOffset:   fileHeaderBytes,
 		postingsRemaining: uint64(len(postings)),

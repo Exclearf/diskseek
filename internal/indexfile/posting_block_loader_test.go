@@ -11,15 +11,16 @@ import (
 	"github.com/Exclearf/diskseek/internal/index"
 )
 
-func TestReadRawPostingBlockHeaderAt(t *testing.T) {
+func TestReadPostingBlockHeaderAtRaw(t *testing.T) {
 	input := append(make([]byte, fileHeaderBytes), rawPostingBlockFixture...)
 	var buffer [rawPostingsPerBlock * rawPostingBytes]byte
-	header, err := readRawPostingBlockHeaderAt(
+	header, err := readPostingBlockHeaderAt(
 		bytes.NewReader(input),
 		termEntry{postingsOffset: fileHeaderBytes, postingsBytes: uint64(len(rawPostingBlockFixture))},
 		fileHeaderBytes,
 		2,
 		2,
+		PostingsCodecRaw,
 		buffer[:],
 	)
 	if err != nil {
@@ -31,15 +32,16 @@ func TestReadRawPostingBlockHeaderAt(t *testing.T) {
 	}
 }
 
-func TestReadRawPostingBlockPayloadAt(t *testing.T) {
+func TestReadPostingBlockPayloadAtRaw(t *testing.T) {
 	input := append(make([]byte, fileHeaderBytes), rawPostingBlockFixture...)
 	var payload [rawPostingsPerBlock * rawPostingBytes]byte
-	header, err := readRawPostingBlockHeaderAt(
+	header, err := readPostingBlockHeaderAt(
 		bytes.NewReader(input),
 		termEntry{postingsOffset: fileHeaderBytes, postingsBytes: uint64(len(rawPostingBlockFixture))},
 		fileHeaderBytes,
 		2,
 		2,
+		PostingsCodecRaw,
 		payload[:],
 	)
 	if err != nil {
@@ -47,10 +49,11 @@ func TestReadRawPostingBlockPayloadAt(t *testing.T) {
 	}
 
 	var decoded [rawPostingsPerBlock]index.Posting
-	if err := readRawPostingBlockPayloadAt(
+	if err := readPostingBlockPayloadAt(
 		bytes.NewReader(input),
 		fileHeaderBytes,
 		header,
+		PostingsCodecRaw,
 		[]uint32{1, 3},
 		payload[:header.payloadBytes],
 		decoded[:2],
@@ -66,7 +69,7 @@ func TestReadRawPostingBlockPayloadAt(t *testing.T) {
 	}
 }
 
-func TestReadRawPostingBlockPayloadAtRejectsInvalidData(t *testing.T) {
+func TestReadPostingBlockPayloadAtRejectsInvalidRawData(t *testing.T) {
 	valid := append(make([]byte, fileHeaderBytes), rawPostingBlockFixture...)
 	zeroFrequency := slices.Clone(valid)
 	binary.LittleEndian.PutUint32(
@@ -88,21 +91,22 @@ func TestReadRawPostingBlockPayloadAtRejectsInvalidData(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			var payload [rawPostingsPerBlock * rawPostingBytes]byte
 			var decoded [rawPostingsPerBlock]index.Posting
-			if err := readRawPostingBlockPayloadAt(
+			if err := readPostingBlockPayloadAt(
 				bytes.NewReader(test.input),
 				fileHeaderBytes,
 				header,
+				PostingsCodecRaw,
 				test.documentLengths,
 				payload[:header.payloadBytes],
 				decoded[:2],
 			); err == nil {
-				t.Fatal("readRawPostingBlockPayloadAt() error = nil")
+				t.Fatal("readPostingBlockPayloadAt() error = nil")
 			}
 		})
 	}
 }
 
-func TestReadRawPostingBlockHeaderAtChecksBounds(t *testing.T) {
+func TestReadPostingBlockHeaderAtChecksRawBounds(t *testing.T) {
 	wrongPayloadLength := []byte(rawPostingBlockFixture)
 	binary.LittleEndian.PutUint32(wrongPayloadLength[4:8], 8)
 	tests := []struct {
@@ -154,15 +158,16 @@ func TestReadRawPostingBlockHeaderAtChecksBounds(t *testing.T) {
 				}
 				return copy(data, encoded), nil
 			})
-			if _, err := readRawPostingBlockHeaderAt(
+			if _, err := readPostingBlockHeaderAt(
 				input,
 				test.term,
 				test.blockOffset,
 				test.postingCount,
 				2,
+				PostingsCodecRaw,
 				buffer[:],
 			); err == nil {
-				t.Fatal("readRawPostingBlockHeaderAt() error = nil")
+				t.Fatal("readPostingBlockHeaderAt() error = nil")
 			}
 			if read != test.expectedRead {
 				t.Fatalf("header read = %t, want %t", read, test.expectedRead)
@@ -171,7 +176,32 @@ func TestReadRawPostingBlockHeaderAtChecksBounds(t *testing.T) {
 	}
 }
 
-func TestReadRawPostingBlockHeaderAtExactRead(t *testing.T) {
+func TestReadPostingBlockHeaderAtChecksVBytePayloadBounds(t *testing.T) {
+	for _, payloadBytes := range []uint32{3, 21} {
+		var encoded [postingBlockHeaderBytes]byte
+		binary.LittleEndian.PutUint32(encoded[0:4], 1)
+		binary.LittleEndian.PutUint32(encoded[4:8], payloadBytes)
+		input := append(make([]byte, fileHeaderBytes), encoded[:]...)
+
+		var buffer [postingBlockHeaderBytes]byte
+		if _, err := readPostingBlockHeaderAt(
+			bytes.NewReader(input),
+			termEntry{
+				postingsOffset: fileHeaderBytes,
+				postingsBytes:  postingBlockHeaderBytes + uint64(payloadBytes),
+			},
+			fileHeaderBytes,
+			2,
+			2,
+			PostingsCodecVByte,
+			buffer[:],
+		); err == nil {
+			t.Fatalf("readPostingBlockHeaderAt() error = nil for %d payload bytes", payloadBytes)
+		}
+	}
+}
+
+func TestReadPostingBlockHeaderAtExactRead(t *testing.T) {
 	readErr := errors.New("read failed")
 	tests := []struct {
 		name    string
@@ -193,9 +223,9 @@ func TestReadRawPostingBlockHeaderAtExactRead(t *testing.T) {
 				copy(data, rawPostingBlockFixture[:test.read])
 				return test.read, test.err
 			})
-			_, err := readRawPostingBlockHeaderAt(input, term, 8, 2, 2, buffer[:])
+			_, err := readPostingBlockHeaderAt(input, term, 8, 2, 2, PostingsCodecRaw, buffer[:])
 			if !errors.Is(err, test.wantErr) {
-				t.Fatalf("readRawPostingBlockHeaderAt() error = %v, want %v", err, test.wantErr)
+				t.Fatalf("readPostingBlockHeaderAt() error = %v, want %v", err, test.wantErr)
 			}
 		})
 	}

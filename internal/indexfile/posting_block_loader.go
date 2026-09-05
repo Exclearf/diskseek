@@ -12,7 +12,9 @@ func readPostingBlockHeaderAt(
 	input io.ReaderAt,
 	term termEntry,
 	blockOffset uint64,
+	postingCount int,
 	totalDocuments uint64,
+	codec PostingsCodec,
 	buffer []byte,
 ) (postingBlockHeader, error) {
 	if blockOffset < term.postingsOffset {
@@ -38,51 +40,56 @@ func readPostingBlockHeaderAt(
 	if uint64(header.payloadBytes) > remaining {
 		return postingBlockHeader{}, errors.New("posting block payload is outside its term range")
 	}
+
+	switch codec {
+	case PostingsCodecRaw:
+		payloadBytes, err := rawPostingBlockPayloadBytes(postingCount)
+		if err != nil {
+			return postingBlockHeader{}, err
+		}
+		if header.payloadBytes != uint32(payloadBytes) {
+			return postingBlockHeader{}, errors.New("invalid raw posting block payload length")
+		}
+	case PostingsCodecVByte:
+		minimumBytes, maximumBytes, err := vBytePostingPayloadBounds(postingCount)
+		if err != nil {
+			return postingBlockHeader{}, err
+		}
+		if header.payloadBytes < uint32(minimumBytes) || header.payloadBytes > uint32(maximumBytes) {
+			return postingBlockHeader{}, errors.New("invalid variable-byte posting block payload length")
+		}
+	default:
+		return postingBlockHeader{}, fmt.Errorf("unsupported postings codec ID %d", codec)
+	}
 	return header, nil
 }
 
-func readRawPostingBlockHeaderAt(
-	input io.ReaderAt,
-	term termEntry,
-	blockOffset uint64,
-	postingCount int,
-	totalDocuments uint64,
-	buffer []byte,
-) (postingBlockHeader, error) {
-	payloadBytes, err := rawPostingBlockPayloadBytes(postingCount)
-	if err != nil {
-		return postingBlockHeader{}, err
-	}
-	header, err := readPostingBlockHeaderAt(input, term, blockOffset, totalDocuments, buffer)
-	if err != nil {
-		return postingBlockHeader{}, err
-	}
-	if header.payloadBytes != uint32(payloadBytes) {
-		return postingBlockHeader{}, errors.New("invalid raw posting block payload length")
-	}
-	return header, nil
-}
-
-func readRawPostingBlockPayloadAt(
+func readPostingBlockPayloadAt(
 	input io.ReaderAt,
 	blockOffset uint64,
 	header postingBlockHeader,
+	codec PostingsCodec,
 	documentLengths []uint32,
 	payload []byte,
 	postings []index.Posting,
 ) error {
-	payloadBytes, err := rawPostingBlockPayloadBytes(len(postings))
-	if err != nil {
-		return err
+	if uint32(len(payload)) != header.payloadBytes {
+		return errors.New("posting block payload length does not match its header")
 	}
-	if header.payloadBytes != uint32(payloadBytes) || len(payload) != payloadBytes {
-		return errors.New("invalid raw posting block payload length")
+	if err := readAtExact(input, payload, int64(blockOffset+postingBlockHeaderBytes)); err != nil {
+		return fmt.Errorf("read posting block payload: %w", err)
 	}
-	if err := readAtExact(input, payload, int64(blockOffset+rawPostingBlockHeaderBytes)); err != nil {
-		return fmt.Errorf("read raw posting block payload: %w", err)
-	}
-	if err := decodeRawPostingPayload(payload, postings); err != nil {
-		return err
+	switch codec {
+	case PostingsCodecRaw:
+		if err := decodeRawPostingPayload(payload, postings); err != nil {
+			return err
+		}
+	case PostingsCodecVByte:
+		if err := decodeVBytePostingPayload(payload, postings); err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("unsupported postings codec ID %d", codec)
 	}
 	if err := validatePostingBlock(postings, header); err != nil {
 		return err

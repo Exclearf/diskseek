@@ -10,11 +10,12 @@ import (
 type Cursor struct {
 	input             io.ReaderAt
 	term              termEntry
+	codec             PostingsCodec
 	documentLengths   []uint32
 	nextBlockOffset   uint64
 	postingsRemaining uint64
-	encoded           [rawPostingsPerBlock * rawPostingBytes]byte
-	postings          [rawPostingsPerBlock]index.Posting
+	encoded           [maxVBytePostingPayloadBytes]byte
+	postings          [postingsPerBlock]index.Posting
 	blockPostingCount int
 	blockPosition     int
 	stats             CursorStats
@@ -38,6 +39,7 @@ func (i *Index) Postings(term string) (*Cursor, bool, error) {
 	cursor := &Cursor{
 		input:             i.postings,
 		term:              entry,
+		codec:             i.postingsCodec,
 		documentLengths:   i.documentLengths,
 		nextBlockOffset:   entry.postingsOffset,
 		postingsRemaining: entry.documentFrequency,
@@ -160,15 +162,16 @@ func (c *Cursor) loadBlock() error {
 }
 
 func (c *Cursor) readBlockHeader() (postingBlockHeader, int, error) {
-	postingCount := int(min(c.postingsRemaining, uint64(rawPostingsPerBlock)))
+	postingCount := int(min(c.postingsRemaining, uint64(postingsPerBlock)))
 	c.stats.BlockHeadersRead++
 	c.stats.BytesRequested += postingBlockHeaderBytes
-	header, err := readRawPostingBlockHeaderAt(
+	header, err := readPostingBlockHeaderAt(
 		c.input,
 		c.term,
 		c.nextBlockOffset,
 		postingCount,
 		uint64(len(c.documentLengths)),
+		c.codec,
 		c.encoded[:],
 	)
 	return header, postingCount, err
@@ -176,10 +179,11 @@ func (c *Cursor) readBlockHeader() (postingBlockHeader, int, error) {
 
 func (c *Cursor) readBlockPayload(header postingBlockHeader, postingCount int) error {
 	c.stats.BytesRequested += uint64(header.payloadBytes)
-	if err := readRawPostingBlockPayloadAt(
+	if err := readPostingBlockPayloadAt(
 		c.input,
 		c.nextBlockOffset,
 		header,
+		c.codec,
 		c.documentLengths,
 		c.encoded[:header.payloadBytes],
 		c.postings[:postingCount],
