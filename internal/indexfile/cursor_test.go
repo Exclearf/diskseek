@@ -173,7 +173,11 @@ func newRawCursorForTest(t *testing.T, postings []index.Posting) *Cursor {
 		t.Fatal(err)
 	}
 
-	documentLengths := make([]uint32, len(postings))
+	var documentCount int
+	for _, posting := range postings {
+		documentCount = max(documentCount, int(posting.DocumentID)+1)
+	}
+	documentLengths := make([]uint32, documentCount)
 	for _, posting := range postings {
 		documentLengths[posting.DocumentID] = max(documentLengths[posting.DocumentID], posting.Frequency)
 	}
