@@ -83,7 +83,11 @@ func TestSelectedUpperBoundUsesCanonicalTermOrder(t *testing.T) {
 		{term: "c", upperBound: 0.3},
 		{term: "d", upperBound: 0.4},
 	}}
-	selected := []*diskQueryTerm{&plan.terms[2], &plan.terms[1], &plan.terms[0]}
+	cursorOrder := []int{2, 1, 0}
+	selected := make([]bool, len(plan.terms))
+	for _, termIndex := range cursorOrder {
+		selected[termIndex] = true
+	}
 
 	got := plan.selectedUpperBound(selected)
 	var want float64
@@ -94,11 +98,11 @@ func TestSelectedUpperBoundUsesCanonicalTermOrder(t *testing.T) {
 		t.Fatalf("selected upper bound bits = %#x, want %#x", math.Float64bits(got), math.Float64bits(want))
 	}
 
-	var cursorOrder float64
-	for _, term := range selected {
-		cursorOrder += term.upperBound
+	var cursorOrderSum float64
+	for _, termIndex := range cursorOrder {
+		cursorOrderSum += plan.terms[termIndex].upperBound
 	}
-	if math.Float64bits(got) == math.Float64bits(cursorOrder) {
+	if math.Float64bits(got) == math.Float64bits(cursorOrderSum) {
 		t.Fatal("test values do not distinguish canonical and cursor order")
 	}
 }
@@ -131,9 +135,9 @@ func TestSelectedUpperBoundDominatesCanonicalScore(t *testing.T) {
 		random.Shuffle(len(selectedPositions), func(left, right int) {
 			selectedPositions[left], selectedPositions[right] = selectedPositions[right], selectedPositions[left]
 		})
-		selected := make([]*diskQueryTerm, len(selectedPositions))
-		for position, termIndex := range selectedPositions {
-			selected[position] = &plan.terms[termIndex]
+		selected := make([]bool, termCount)
+		for _, termIndex := range selectedPositions {
+			selected[termIndex] = true
 		}
 
 		var score, wantBound float64

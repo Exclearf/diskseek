@@ -80,3 +80,17 @@ func TestTopKMatchesFullSort(t *testing.T) {
 		})
 	}
 }
+
+func TestTopKThresholdRequiresFullCollector(t *testing.T) {
+	collector := newTopK(2)
+	collector.add(result{DocumentID: 0, Score: 2})
+	if _, active := collector.threshold(); active {
+		t.Fatal("threshold active before collector is full")
+	}
+
+	collector.add(result{DocumentID: 1, Score: 1})
+	threshold, active := collector.threshold()
+	if !active || threshold != 1 {
+		t.Fatalf("threshold = (%v, %t), want (1, true)", threshold, active)
+	}
+}

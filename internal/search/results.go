@@ -53,6 +53,13 @@ func (t *topK) add(candidate result) {
 	heap.Fix(&t.items, 0)
 }
 
+func (t *topK) threshold() (float64, bool) {
+	if t.limit <= 0 || len(t.items) < t.limit {
+		return 0, false
+	}
+	return t.items[0].Score, true
+}
+
 func (t *topK) finish() []result {
 	results := []result(t.items)
 	slices.SortFunc(results, compareResults)
