@@ -17,6 +17,9 @@ type daatStats struct {
 
 func searchDAAT(idx *indexfile.Index, query string, k int) ([]result, daatStats, error) {
 	if k <= 0 {
+		if _, err := prepareQuery(query); err != nil {
+			return nil, daatStats{}, err
+		}
 		return nil, daatStats{}, nil
 	}
 

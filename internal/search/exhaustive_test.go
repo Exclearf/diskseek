@@ -2,12 +2,14 @@ package search
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"math"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/Exclearf/diskseek/internal/analyzer"
 	"github.com/Exclearf/diskseek/internal/index"
 	"github.com/Exclearf/diskseek/internal/indexfile"
 )
@@ -69,6 +71,14 @@ func TestExhaustiveDAATEmptyResults(t *testing.T) {
 				t.Fatalf("searchDAAT() returned %d results, want 0", len(results))
 			}
 		})
+	}
+}
+
+func TestSearchDAATValidatesQueryWithZeroK(t *testing.T) {
+	idx := openDiskTestIndex(t, filepath.Join("..", "indexfile", "testdata", "golden-v1", "vbyte"))
+	results, stats, err := searchDAAT(idx, string([]byte{0xff}), 0)
+	if !errors.Is(err, analyzer.ErrInvalidUTF8) || results != nil || stats != (daatStats{}) {
+		t.Fatalf("searchDAAT() = (%v, %+v, %v), want (nil, zero stats, %v)", results, stats, err, analyzer.ErrInvalidUTF8)
 	}
 }
 
