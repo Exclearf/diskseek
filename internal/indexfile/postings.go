@@ -14,6 +14,7 @@ func verifyPostingsFile(
 	ctx context.Context,
 	input io.Reader,
 	size int64,
+	codec PostingsCodec,
 	terms map[string]termEntry,
 	remainingTokenCounts []uint32,
 ) error {
@@ -32,23 +33,40 @@ func verifyPostingsFile(
 	totalDocuments := uint64(len(remainingTokenCounts))
 	for _, term := range orderedTerms {
 		entry := terms[term]
-		if err := readRawPostingList(
-			reader,
-			entry.documentFrequency,
-			entry.postingsBytes,
-			totalDocuments,
-			func(posting index.Posting) error {
-				if err := ctx.Err(); err != nil {
-					return err
-				}
-				remaining := &remainingTokenCounts[posting.DocumentID]
-				if posting.Frequency > *remaining {
-					return fmt.Errorf("document %d term frequencies exceed its length", posting.DocumentID)
-				}
-				*remaining -= posting.Frequency
-				return nil
-			},
-		); err != nil {
+		visit := func(posting index.Posting) error {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			remaining := &remainingTokenCounts[posting.DocumentID]
+			if posting.Frequency > *remaining {
+				return fmt.Errorf("document %d term frequencies exceed its length", posting.DocumentID)
+			}
+			*remaining -= posting.Frequency
+			return nil
+		}
+
+		var err error
+		switch codec {
+		case PostingsCodecRaw:
+			err = readRawPostingList(
+				reader,
+				entry.documentFrequency,
+				entry.postingsBytes,
+				totalDocuments,
+				visit,
+			)
+		case PostingsCodecVByte:
+			err = readVBytePostingList(
+				reader,
+				entry.documentFrequency,
+				entry.postingsBytes,
+				totalDocuments,
+				visit,
+			)
+		default:
+			return fmt.Errorf("unsupported postings codec ID %d", codec)
+		}
+		if err != nil {
 			return fmt.Errorf("verify %q postings: %w", term, err)
 		}
 	}

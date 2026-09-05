@@ -90,6 +90,7 @@ func Verify(ctx context.Context, directory string) (err error) {
 		ctx,
 		contextReader{ctx, postingInput},
 		int64(metadata.Terms.Postings.Length),
+		metadata.Terms.Codec,
 		terms,
 		lengths.values,
 	); err != nil {

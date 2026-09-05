@@ -13,7 +13,22 @@ import (
 )
 
 func TestVerifyEmptyIndex(t *testing.T) {
-	directory := writeVerificationTestIndex(t, nil, nil)
+	directory := writeVerificationTestIndex(t, nil, nil, PostingsCodecRaw)
+	if err := Verify(context.Background(), directory); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestVerifyVByteIndex(t *testing.T) {
+	directory := writeVerificationTestIndex(
+		t,
+		[]index.DocumentMeta{
+			{ExternalID: "a", Length: 2},
+			{ExternalID: "b", Length: 3},
+		},
+		verificationTestTerms(),
+		PostingsCodecVByte,
+	)
 	if err := Verify(context.Background(), directory); err != nil {
 		t.Fatal(err)
 	}
@@ -24,7 +39,7 @@ func TestVerifyRejectsCrossFileMismatch(t *testing.T) {
 		directory := writeVerificationTestIndex(t, []index.DocumentMeta{
 			{ExternalID: "a", Length: 1},
 			{ExternalID: "b", Length: 4},
-		}, verificationTestTerms())
+		}, verificationTestTerms(), PostingsCodecRaw)
 		if err := Verify(context.Background(), directory); err == nil {
 			t.Fatal("Verify() error = nil")
 		}
@@ -34,7 +49,7 @@ func TestVerifyRejectsCrossFileMismatch(t *testing.T) {
 		directory := writeVerificationTestIndex(t, []index.DocumentMeta{
 			{ExternalID: "a", Length: 2},
 			{ExternalID: "b", Length: 3},
-		}, verificationTestTerms())
+		}, verificationTestTerms(), PostingsCodecRaw)
 		replaceExternalIDFiles(t, directory, []index.DocumentMeta{{ExternalID: "a"}})
 		if err := Verify(context.Background(), directory); err == nil {
 			t.Fatal("Verify() error = nil")
@@ -43,7 +58,7 @@ func TestVerifyRejectsCrossFileMismatch(t *testing.T) {
 }
 
 func TestVerifyCancellation(t *testing.T) {
-	directory := writeVerificationTestIndex(t, nil, nil)
+	directory := writeVerificationTestIndex(t, nil, nil, PostingsCodecRaw)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	if err := Verify(ctx, directory); !errors.Is(err, context.Canceled) {
@@ -71,6 +86,7 @@ func writeVerificationTestIndex(
 	t *testing.T,
 	documents []index.DocumentMeta,
 	terms []termTestTerm,
+	codec PostingsCodec,
 ) string {
 	t.Helper()
 
@@ -93,7 +109,7 @@ func writeVerificationTestIndex(
 	termMetadata, err := WriteTermFiles(
 		&termData,
 		&postingData,
-		PostingsCodecRaw,
+		codec,
 		source.nextTerm,
 		source.nextPosting,
 	)

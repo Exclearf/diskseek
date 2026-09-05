@@ -16,6 +16,7 @@ func TestVerifyPostingsFile(t *testing.T) {
 			context.Background(),
 			bytes.NewReader(data),
 			int64(len(data)),
+			PostingsCodecRaw,
 			nil,
 			nil,
 		); err != nil {
@@ -29,6 +30,7 @@ func TestVerifyPostingsFile(t *testing.T) {
 			context.Background(),
 			bytes.NewReader(data),
 			int64(len(data)),
+			PostingsCodecRaw,
 			terms,
 			[]uint32{2, 3},
 		); err != nil {
@@ -52,6 +54,7 @@ func TestVerifyPostingsFileRejectsInconsistentDocumentLengths(t *testing.T) {
 				context.Background(),
 				bytes.NewReader(data),
 				int64(len(data)),
+				PostingsCodecRaw,
 				terms,
 				test.lengths,
 			); err == nil {
@@ -68,6 +71,7 @@ func TestVerifyPostingsFileValidatesChecksum(t *testing.T) {
 		context.Background(),
 		bytes.NewReader(data),
 		int64(len(data)),
+		PostingsCodecRaw,
 		terms,
 		[]uint32{3, 3},
 	); err == nil {
@@ -84,7 +88,7 @@ func TestVerifyPostingsFileCancellation(t *testing.T) {
 		after:  fileHeaderBytes + rawPostingBlockHeaderBytes,
 		cancel: cancel,
 	}
-	err := verifyPostingsFile(ctx, input, int64(len(data)), terms, []uint32{2, 3})
+	err := verifyPostingsFile(ctx, input, int64(len(data)), PostingsCodecRaw, terms, []uint32{2, 3})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("verifyPostingsFile() error = %v, want context.Canceled", err)
 	}
