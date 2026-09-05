@@ -1,6 +1,7 @@
 package indexfile
 
 import (
+	"bufio"
 	"fmt"
 	"hash"
 	"hash/crc32"
@@ -52,17 +53,18 @@ func (r *fileReader) finish() error {
 }
 
 type fileWriter struct {
-	output       io.Writer
+	output       *bufio.Writer
 	checksummed  io.Writer
 	checksum     hash.Hash32
 	writtenBytes uint64
 }
 
 func newFileWriter(output io.Writer, role fileRole) (*fileWriter, error) {
+	buffer := bufio.NewWriter(output)
 	checksum := crc32.New(crc32cTable)
 	w := &fileWriter{
-		output:      output,
-		checksummed: io.MultiWriter(output, checksum),
+		output:      buffer,
+		checksummed: io.MultiWriter(buffer, checksum),
 		checksum:    checksum,
 	}
 	if err := writeHeader(w.checksummed, role); err != nil {
@@ -81,6 +83,9 @@ func (w *fileWriter) Write(data []byte) (int, error) {
 func (w *fileWriter) finish() (fileMetadata, error) {
 	checksum := w.checksum.Sum32()
 	if err := writeFooter(w.output, checksum); err != nil {
+		return fileMetadata{}, err
+	}
+	if err := w.output.Flush(); err != nil {
 		return fileMetadata{}, err
 	}
 	return fileMetadata{

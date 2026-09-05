@@ -79,3 +79,74 @@ func TestWriteDocumentBodiesEmpty(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestWriteDocumentFiles(t *testing.T) {
+	documents := []index.DocumentMeta{
+		{ExternalID: "a", Length: 2},
+		{ExternalID: "b", Length: 3},
+	}
+
+	var lengths, offsets, data bytes.Buffer
+	next := 0
+	metadata, err := writeDocumentFiles(&lengths, &offsets, &data, func() (index.DocumentMeta, error) {
+		if next == len(documents) {
+			return index.DocumentMeta{}, io.EOF
+		}
+		document := documents[next]
+		next++
+		return document, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name     string
+		got      []byte
+		want     string
+		metadata fileMetadata
+	}{
+		{
+			name: "document lengths",
+			got:  lengths.Bytes(),
+			want: "DSKDLEN\x01\x02\x00\x00\x00\x03\x00\x00\x00\xd4\x8a\xe0\x00",
+			metadata: fileMetadata{
+				length:   20,
+				checksum: 0x00e08ad4,
+			},
+		},
+		{
+			name: "document offsets",
+			got:  offsets.Bytes(),
+			want: "DSKDOFF\x01" +
+				"\x00\x00\x00\x00\x00\x00\x00\x00" +
+				"\x01\x00\x00\x00\x00\x00\x00\x00" +
+				"\x02\x00\x00\x00\x00\x00\x00\x00" +
+				"\x1b\x8a\xed\xfe",
+			metadata: fileMetadata{
+				length:   36,
+				checksum: 0xfeed8a1b,
+			},
+		},
+		{
+			name: "document data",
+			got:  data.Bytes(),
+			want: "DSKDDAT\x01ab\x02\x66\x22\x20",
+			metadata: fileMetadata{
+				length:   14,
+				checksum: 0x20226602,
+			},
+		},
+	}
+	gotMetadata := []fileMetadata{metadata.lengths, metadata.offsets, metadata.data}
+	for position, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if !bytes.Equal(test.got, []byte(test.want)) {
+				t.Fatalf("file = % x, want % x", test.got, test.want)
+			}
+			if gotMetadata[position] != test.metadata {
+				t.Fatalf("metadata = %+v, want %+v", gotMetadata[position], test.metadata)
+			}
+		})
+	}
+}
