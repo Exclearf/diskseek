@@ -65,7 +65,7 @@ func TestFileWriterChecksumCoverage(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	checksum, err := writer.finish()
+	metadata, err := writer.finish()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,6 +74,9 @@ func TestFileWriterChecksumCoverage(t *testing.T) {
 	bodyEnd := fileHeaderBytes + len("go")
 	if len(data) != bodyEnd+fileFooterBytes {
 		t.Fatalf("file length = %d, want %d", len(data), bodyEnd+fileFooterBytes)
+	}
+	if metadata.length != uint64(len(data)) {
+		t.Fatalf("reported file length = %d, want %d", metadata.length, len(data))
 	}
 	if got := string(data[:bodyEnd]); got != "DSKTERM\x01go" {
 		t.Fatalf("header and body = %q, want %q", got, "DSKTERM\x01go")
@@ -84,7 +87,7 @@ func TestFileWriterChecksumCoverage(t *testing.T) {
 		t.Fatal(err)
 	}
 	recomputed := crc32.Checksum(data[:bodyEnd], crc32cTable)
-	if checksum != stored || stored != recomputed {
-		t.Fatalf("checksums: returned=%08x stored=%08x recomputed=%08x", checksum, stored, recomputed)
+	if metadata.checksum != stored || stored != recomputed {
+		t.Fatalf("checksums: returned=%08x stored=%08x recomputed=%08x", metadata.checksum, stored, recomputed)
 	}
 }

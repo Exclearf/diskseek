@@ -52,9 +52,10 @@ func (r *fileReader) finish() error {
 }
 
 type fileWriter struct {
-	output      io.Writer
-	checksummed io.Writer
-	checksum    hash.Hash32
+	output       io.Writer
+	checksummed  io.Writer
+	checksum     hash.Hash32
+	writtenBytes uint64
 }
 
 func newFileWriter(output io.Writer, role fileRole) (*fileWriter, error) {
@@ -67,17 +68,28 @@ func newFileWriter(output io.Writer, role fileRole) (*fileWriter, error) {
 	if err := writeHeader(w.checksummed, role); err != nil {
 		return nil, err
 	}
+	w.writtenBytes = fileHeaderBytes
 	return w, nil
 }
 
 func (w *fileWriter) Write(data []byte) (int, error) {
-	return w.checksummed.Write(data)
+	written, err := w.checksummed.Write(data)
+	w.writtenBytes += uint64(written)
+	return written, err
 }
 
-func (w *fileWriter) finish() (uint32, error) {
+func (w *fileWriter) finish() (fileMetadata, error) {
 	checksum := w.checksum.Sum32()
 	if err := writeFooter(w.output, checksum); err != nil {
-		return 0, err
+		return fileMetadata{}, err
 	}
-	return checksum, nil
+	return fileMetadata{
+		length:   w.writtenBytes + fileFooterBytes,
+		checksum: checksum,
+	}, nil
+}
+
+type fileMetadata struct {
+	length   uint64
+	checksum uint32
 }
