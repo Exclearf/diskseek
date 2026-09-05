@@ -117,6 +117,9 @@ func (r *documentReader) next() (index.DocumentMeta, error) {
 
 	externalID := make([]byte, int(externalIDLength))
 	if _, err := io.ReadFull(r.reader, externalID); err != nil {
+		if errors.Is(err, io.EOF) {
+			err = io.ErrUnexpectedEOF
+		}
 		return index.DocumentMeta{}, fmt.Errorf("read external document ID: %w", err)
 	}
 	if !utf8.Valid(externalID) {
@@ -124,6 +127,9 @@ func (r *documentReader) next() (index.DocumentMeta, error) {
 	}
 	documentLength, err := readUint32(r.reader)
 	if err != nil {
+		if errors.Is(err, io.EOF) {
+			err = io.ErrUnexpectedEOF
+		}
 		return index.DocumentMeta{}, fmt.Errorf("read analyzed document length: %w", err)
 	}
 	return index.DocumentMeta{ExternalID: string(externalID), Length: documentLength}, nil

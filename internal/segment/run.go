@@ -261,6 +261,9 @@ func readRunTermHeader(reader io.Reader, run runHeader) (string, uint64, error) 
 
 	termBytes := make([]byte, int(termLength))
 	if _, err := io.ReadFull(reader, termBytes); err != nil {
+		if errors.Is(err, io.EOF) {
+			err = io.ErrUnexpectedEOF
+		}
 		return "", 0, fmt.Errorf("read run term: %w", err)
 	}
 	if !utf8.Valid(termBytes) {
@@ -269,6 +272,9 @@ func readRunTermHeader(reader io.Reader, run runHeader) (string, uint64, error) 
 
 	var encodedCount [8]byte
 	if _, err := io.ReadFull(reader, encodedCount[:]); err != nil {
+		if errors.Is(err, io.EOF) {
+			err = io.ErrUnexpectedEOF
+		}
 		return "", 0, fmt.Errorf("read run posting count: %w", err)
 	}
 	postingCount := binary.LittleEndian.Uint64(encodedCount[:])
