@@ -59,6 +59,11 @@ type fileWriter struct {
 	writtenBytes uint64
 }
 
+type FileMetadata struct {
+	Length   uint64
+	Checksum uint32
+}
+
 func newFileWriter(output io.Writer, role fileRole) (*fileWriter, error) {
 	buffer := bufio.NewWriter(output)
 	checksum := crc32.New(crc32cTable)
@@ -80,21 +85,16 @@ func (w *fileWriter) Write(data []byte) (int, error) {
 	return written, err
 }
 
-func (w *fileWriter) finish() (fileMetadata, error) {
+func (w *fileWriter) finish() (FileMetadata, error) {
 	checksum := w.checksum.Sum32()
 	if err := writeFooter(w.output, checksum); err != nil {
-		return fileMetadata{}, err
+		return FileMetadata{}, err
 	}
 	if err := w.output.Flush(); err != nil {
-		return fileMetadata{}, err
+		return FileMetadata{}, err
 	}
-	return fileMetadata{
-		length:   w.writtenBytes + fileFooterBytes,
-		checksum: checksum,
+	return FileMetadata{
+		Length:   w.writtenBytes + fileFooterBytes,
+		Checksum: checksum,
 	}, nil
-}
-
-type fileMetadata struct {
-	length   uint64
-	checksum uint32
 }

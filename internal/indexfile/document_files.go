@@ -8,6 +8,12 @@ import (
 	"github.com/Exclearf/diskseek/internal/index"
 )
 
+type DocumentFilesMetadata struct {
+	Lengths FileMetadata
+	Offsets FileMetadata
+	Data    FileMetadata
+}
+
 func writeDocumentBodies(
 	lengths io.Writer,
 	offsets io.Writer,
@@ -41,50 +47,44 @@ func writeDocumentBodies(
 	}
 }
 
-type documentFilesMetadata struct {
-	lengths fileMetadata
-	offsets fileMetadata
-	data    fileMetadata
-}
-
-func writeDocumentFiles(
+func WriteDocumentFiles(
 	lengthOutput io.Writer,
 	offsetOutput io.Writer,
 	dataOutput io.Writer,
 	nextDocument func() (index.DocumentMeta, error),
-) (documentFilesMetadata, error) {
+) (DocumentFilesMetadata, error) {
 	lengths, err := newFileWriter(lengthOutput, documentLengthsRole)
 	if err != nil {
-		return documentFilesMetadata{}, err
+		return DocumentFilesMetadata{}, err
 	}
 	offsets, err := newFileWriter(offsetOutput, documentOffsetsRole)
 	if err != nil {
-		return documentFilesMetadata{}, err
+		return DocumentFilesMetadata{}, err
 	}
 	data, err := newFileWriter(dataOutput, documentDataRole)
 	if err != nil {
-		return documentFilesMetadata{}, err
+		return DocumentFilesMetadata{}, err
 	}
 
 	if err := writeDocumentBodies(lengths, offsets, data, nextDocument); err != nil {
-		return documentFilesMetadata{}, err
+		return DocumentFilesMetadata{}, err
 	}
 	lengthMetadata, err := lengths.finish()
 	if err != nil {
-		return documentFilesMetadata{}, fmt.Errorf("finish document lengths: %w", err)
+		return DocumentFilesMetadata{}, fmt.Errorf("finish document lengths: %w", err)
 	}
 	offsetMetadata, err := offsets.finish()
 	if err != nil {
-		return documentFilesMetadata{}, fmt.Errorf("finish document offsets: %w", err)
+		return DocumentFilesMetadata{}, fmt.Errorf("finish document offsets: %w", err)
 	}
 	dataMetadata, err := data.finish()
 	if err != nil {
-		return documentFilesMetadata{}, fmt.Errorf("finish document data: %w", err)
+		return DocumentFilesMetadata{}, fmt.Errorf("finish document data: %w", err)
 	}
 
-	return documentFilesMetadata{
-		lengths: lengthMetadata,
-		offsets: offsetMetadata,
-		data:    dataMetadata,
+	return DocumentFilesMetadata{
+		Lengths: lengthMetadata,
+		Offsets: offsetMetadata,
+		Data:    dataMetadata,
 	}, nil
 }
