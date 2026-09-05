@@ -39,12 +39,16 @@ func TestVBytePostingPayloadBytes(t *testing.T) {
 func TestVBytePostingBlock(t *testing.T) {
 	want := vBytePostingFixturePostings()
 	var encoded bytes.Buffer
-	if err := writeVBytePostingBlock(&encoded, want); err != nil {
+	writtenBytes, err := writeVBytePostingBlock(&encoded, want)
+	if err != nil {
 		t.Fatal(err)
 	}
 
 	if got, want := encoded.Len(), postingBlockHeaderBytes+len(vBytePostingPayloadFixture); got != want {
 		t.Fatalf("block length = %d, want %d", got, want)
+	}
+	if writtenBytes != encoded.Len() {
+		t.Fatalf("written bytes = %d, want %d", writtenBytes, encoded.Len())
 	}
 	if got := binary.LittleEndian.Uint32(encoded.Bytes()[0:4]); got != 824 {
 		t.Fatalf("block endpoint = %d, want 824", got)
@@ -64,7 +68,7 @@ func TestVBytePostingBlock(t *testing.T) {
 
 func TestReadVBytePostingBlockRejectsInvalidEnvelope(t *testing.T) {
 	var encoded bytes.Buffer
-	if err := writeVBytePostingBlock(&encoded, vBytePostingFixturePostings()); err != nil {
+	if _, err := writeVBytePostingBlock(&encoded, vBytePostingFixturePostings()); err != nil {
 		t.Fatal(err)
 	}
 	valid := encoded.Bytes()

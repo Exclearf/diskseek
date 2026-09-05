@@ -87,19 +87,20 @@ func decodeVBytePostingPayload(payload []byte, postings []index.Posting) error {
 	return nil
 }
 
-func writeVBytePostingBlock(writer io.Writer, postings []index.Posting) error {
+func writeVBytePostingBlock(writer io.Writer, postings []index.Posting) (int, error) {
 	var encoded [postingBlockHeaderBytes + maxVBytePostingPayloadBytes]byte
 	payloadBytes, err := encodeVBytePostingPayload(encoded[postingBlockHeaderBytes:], postings)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	binary.LittleEndian.PutUint32(encoded[0:4], uint32(postings[len(postings)-1].DocumentID))
 	binary.LittleEndian.PutUint32(encoded[4:8], uint32(payloadBytes))
-	if _, err := writer.Write(encoded[:postingBlockHeaderBytes+payloadBytes]); err != nil {
-		return fmt.Errorf("write variable-byte posting block: %w", err)
+	writtenBytes := postingBlockHeaderBytes + payloadBytes
+	if _, err := writer.Write(encoded[:writtenBytes]); err != nil {
+		return 0, fmt.Errorf("write variable-byte posting block: %w", err)
 	}
-	return nil
+	return writtenBytes, nil
 }
 
 func readVBytePostingBlock(
