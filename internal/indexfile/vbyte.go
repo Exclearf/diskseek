@@ -27,8 +27,7 @@ func encodeVByteUint32(destination []byte, value uint32) int {
 
 func decodeVByteUint32(encoded []byte) (uint32, int, error) {
 	var value uint32
-	for position := 0; position < len(encoded) && position < maxVByteUint32Bytes; position++ {
-		current := encoded[position]
+	for position, current := range encoded[:min(len(encoded), maxVByteUint32Bytes)] {
 		payload := uint32(current & 0x7f)
 		if position == 0 && current == 0 {
 			return 0, 0, errInvalidVByteUint32
