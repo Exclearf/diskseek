@@ -21,12 +21,12 @@ type differentialQuery struct {
 	k     int
 }
 
-func TestDAATMatchesReference(t *testing.T) {
+func TestDiskExecutorsMatchReference(t *testing.T) {
 	authored, err := os.ReadFile("../index/testdata/corpus.tsv")
 	if err != nil {
 		t.Fatal(err)
 	}
-	checkDAATParity(t, authored, []differentialQuery{
+	checkDiskExecutorParity(t, authored, []differentialQuery{
 		{query: "fast", k: 10},
 		{query: "search index", k: 1},
 		{query: "search index", k: 2},
@@ -39,7 +39,7 @@ func TestDAATMatchesReference(t *testing.T) {
 	})
 }
 
-func TestGeneratedDAATMatchesReference(t *testing.T) {
+func TestGeneratedDiskExecutorsMatchReference(t *testing.T) {
 	generator := rand.New(rand.NewPCG(10, 5))
 	for corpusIndex := range 6 {
 		documentCount := generator.IntN(7) + 2
@@ -57,12 +57,12 @@ func TestGeneratedDAATMatchesReference(t *testing.T) {
 		}
 
 		t.Run(fmt.Sprintf("corpus-%d", corpusIndex), func(t *testing.T) {
-			checkDAATParity(t, input, queries)
+			checkDiskExecutorParity(t, input, queries)
 		})
 	}
 }
 
-func checkDAATParity(t *testing.T, input []byte, queries []differentialQuery) {
+func checkDiskExecutorParity(t *testing.T, input []byte, queries []differentialQuery) {
 	t.Helper()
 	logical, err := index.Build(corpus.NewTSVReader(bytes.NewReader(input)))
 	if err != nil {
@@ -102,23 +102,34 @@ func checkDAATParity(t *testing.T, input []byte, queries []differentialQuery) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					got, stats, err := searchDAAT(disk, query.query, query.k)
+					exhaustive, exhaustiveStats, err := searchDAAT(disk, query.query, query.k)
 					if err != nil {
 						t.Fatal(err)
 					}
-					if !equalResultBits(got, want) {
-						t.Fatalf("searchDAAT(%q, %d) = %+v, want %+v", query.query, query.k, got, want)
+					if !equalResultBits(exhaustive, want) {
+						t.Fatalf("searchDAAT(%q, %d) = %+v, want %+v", query.query, query.k, exhaustive, want)
+					}
+
+					wand, wandStats, err := searchWAND(disk, query.query, query.k)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if !equalResultBits(wand, exhaustive) {
+						t.Fatalf("searchWAND(%q, %d) = %+v, want %+v", query.query, query.k, wand, exhaustive)
+					}
+					if wandStats.CandidatesScored > exhaustiveStats.CandidatesScored {
+						t.Fatalf("WAND scored %d candidates, exhaustive DAAT scored %d", wandStats.CandidatesScored, exhaustiveStats.CandidatesScored)
 					}
 
 					postings, candidates, err := expectedDAATWork(logical.Postings, query.query, query.k)
 					if err != nil {
 						t.Fatal(err)
 					}
-					if stats.PostingsDecoded != postings || stats.NextCalls != postings ||
-						stats.CandidatesScored != candidates || stats.AdvanceCalls != 0 {
-						t.Fatalf("stats = %+v, want postings/next %d, candidates %d, advances 0", stats, postings, candidates)
+					if exhaustiveStats.PostingsDecoded != postings || exhaustiveStats.NextCalls != postings ||
+						exhaustiveStats.CandidatesScored != candidates || exhaustiveStats.AdvanceCalls != 0 {
+						t.Fatalf("stats = %+v, want postings/next %d, candidates %d, advances 0", exhaustiveStats, postings, candidates)
 					}
-					requestedBytes[codec.value] += stats.BytesRequested
+					requestedBytes[codec.value] += exhaustiveStats.BytesRequested
 				})
 			}
 		})

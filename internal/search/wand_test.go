@@ -104,7 +104,7 @@ func TestExecuteWAND(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		got, err := executeWAND(disk, plan, 1)
+		got, stats, err := executeWAND(disk, plan, 1)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -114,9 +114,17 @@ func TestExecuteWAND(t *testing.T) {
 		}
 		checkWANDResults(t, got, want, &logical)
 
-		stats := plan.terms[0].cursor.Stats()
-		if stats.NextCalls != 1 || stats.AdvanceCalls != 0 {
-			t.Fatalf("cursor calls = next %d, advance %d; want 1, 0", stats.NextCalls, stats.AdvanceCalls)
+		wantStats := wandStats{
+			NextCalls:        1,
+			BlockHeadersRead: 1,
+			BlocksDecoded:    1,
+			PostingsDecoded:  3,
+			BytesRequested:   14,
+			CandidatesScored: 1,
+			ThresholdChanges: 1,
+		}
+		if stats != wantStats {
+			t.Fatalf("WAND stats = %+v, want %+v", stats, wantStats)
 		}
 	})
 
@@ -132,7 +140,7 @@ func TestExecuteWAND(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		got, err := executeWAND(disk, plan, 1)
+		got, stats, err := executeWAND(disk, plan, 1)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -150,6 +158,74 @@ func TestExecuteWAND(t *testing.T) {
 			if got := term.cursor.Stats().AdvanceCalls; got != want {
 				t.Fatalf("%q advance calls = %d, want %d", term.term, got, want)
 			}
+		}
+		if stats.PivotSelections != 1 || stats.CandidatesScored != 1 || stats.ThresholdChanges != 1 {
+			t.Fatalf("WAND stats = %+v; want one pivot, candidate, and threshold change", stats)
+		}
+	})
+
+	t.Run("replacement raises threshold", func(t *testing.T) {
+		const input = "d0\tterm filler\n" +
+			"d1\tterm\n"
+		disk, _ := buildWANDTestIndex(t, input)
+
+		_, stats, err := searchWAND(disk, "term", 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if stats.CandidatesScored != 2 || stats.PivotSelections != 1 || stats.ThresholdChanges != 2 {
+			t.Fatalf("WAND stats = %+v; want two candidates, one pivot, and two threshold changes", stats)
+		}
+	})
+}
+
+func TestWANDCandidatePruning(t *testing.T) {
+	t.Run("avoids scoring", func(t *testing.T) {
+		const input = "d0\trare rare rare rare common\n" +
+			"d1\tcommon\n" +
+			"d2\tcommon\n" +
+			"d3\tcommon\n" +
+			"d4\tcommon\n" +
+			"d5\tcommon\n"
+		disk, _ := buildWANDTestIndex(t, input)
+
+		exhaustive, exhaustiveStats, err := searchDAAT(disk, "rare common", 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		wand, wandStats, err := searchWAND(disk, "rare common", 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if !equalResultBits(wand, exhaustive) {
+			t.Fatalf("WAND results = %+v, exhaustive results = %+v", wand, exhaustive)
+		}
+		if exhaustiveStats.CandidatesScored != 6 || wandStats.CandidatesScored != 1 {
+			t.Fatalf("candidates scored = exhaustive %d, WAND %d; want 6, 1", exhaustiveStats.CandidatesScored, wandStats.CandidatesScored)
+		}
+	})
+
+	t.Run("loose bound scores every candidate", func(t *testing.T) {
+		const input = "d0\tterm filler\n" +
+			"d1\tterm filler\n" +
+			"d2\tterm filler\n"
+		disk, _ := buildWANDTestIndex(t, input)
+
+		exhaustive, exhaustiveStats, err := searchDAAT(disk, "term", 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		wand, wandStats, err := searchWAND(disk, "term", 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if !equalResultBits(wand, exhaustive) {
+			t.Fatalf("WAND results = %+v, exhaustive results = %+v", wand, exhaustive)
+		}
+		if exhaustiveStats.CandidatesScored != 3 || wandStats.CandidatesScored != 3 {
+			t.Fatalf("candidates scored = exhaustive %d, WAND %d; want 3, 3", exhaustiveStats.CandidatesScored, wandStats.CandidatesScored)
 		}
 	})
 }
