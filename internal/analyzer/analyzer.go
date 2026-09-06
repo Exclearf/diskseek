@@ -6,6 +6,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/kljensen/snowball/english"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/unicode/norm"
 )
@@ -33,7 +34,7 @@ func Analyze(text string) ([]string, error) {
 		if token.Len() == 0 {
 			return
 		}
-		tokens = append(tokens, token.String())
+		tokens = append(tokens, english.Stem(token.String(), true))
 		token.Reset()
 	}
 

@@ -9,7 +9,7 @@ import (
 
 const (
 	metadataBodyBytes       = 68
-	analyzerContractID      = 1
+	analyzerContractID      = 2
 	fileMetadataRecordBytes = 12
 )
 

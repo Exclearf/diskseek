@@ -17,7 +17,7 @@ func TestPrepareQuery(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	want := []string{"alpha", "strasse"}
+	want := []string{"alpha", "strass"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("prepareQuery() = %q, want %q", got, want)
 	}
