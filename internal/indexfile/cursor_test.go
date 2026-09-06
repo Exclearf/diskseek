@@ -237,6 +237,18 @@ func newRawCursorForTest(t *testing.T, postings []index.Posting) *Cursor {
 
 func newCursorForTest(t *testing.T, postings []index.Posting, codec PostingsCodec) *Cursor {
 	t.Helper()
+	return newCursorTestFixture(t, postings, codec).open(t)
+}
+
+type cursorTestFixture struct {
+	data            []byte
+	term            termEntry
+	codec           PostingsCodec
+	documentLengths []uint32
+}
+
+func newCursorTestFixture(t testing.TB, postings []index.Posting, codec PostingsCodec) cursorTestFixture {
+	t.Helper()
 
 	var encoded bytes.Buffer
 	next := 0
@@ -264,14 +276,27 @@ func newCursorForTest(t *testing.T, postings []index.Posting, codec PostingsCode
 	for _, posting := range postings {
 		documentLengths[posting.DocumentID] = max(documentLengths[posting.DocumentID], posting.Frequency)
 	}
-	data := append(make([]byte, fileHeaderBytes), encoded.Bytes()...)
+	return cursorTestFixture{
+		data: append(make([]byte, fileHeaderBytes), encoded.Bytes()...),
+		term: termEntry{
+			documentFrequency: uint64(len(postings)),
+			postingsOffset:    fileHeaderBytes,
+			postingsBytes:     postingsBytes,
+		},
+		codec:           codec,
+		documentLengths: documentLengths,
+	}
+}
+
+func (f cursorTestFixture) open(t testing.TB) *Cursor {
+	t.Helper()
 	cursor := &Cursor{
-		input:             bytes.NewReader(data),
-		term:              termEntry{documentFrequency: uint64(len(postings)), postingsOffset: fileHeaderBytes, postingsBytes: postingsBytes},
-		codec:             codec,
-		documentLengths:   documentLengths,
+		input:             bytes.NewReader(f.data),
+		term:              f.term,
+		codec:             f.codec,
+		documentLengths:   f.documentLengths,
 		nextBlockOffset:   fileHeaderBytes,
-		postingsRemaining: uint64(len(postings)),
+		postingsRemaining: f.term.documentFrequency,
 	}
 	if err := cursor.loadBlock(); err != nil {
 		t.Fatal(err)
