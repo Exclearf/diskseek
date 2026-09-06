@@ -21,7 +21,7 @@ func TestBuildCreatesOwnedArtifacts(t *testing.T) {
 	parent := t.TempDir()
 	result, err := build(
 		context.Background(),
-		corpus.NewTSVReader(strings.NewReader("0\ta\n")),
+		corpus.NewTSVReader(strings.NewReader("0\tx\n")),
 		segmentBufferBytes,
 		parent,
 	)
@@ -59,7 +59,7 @@ func TestBuildIndexCreatesIndexAndRemovesTemporaryArtifacts(t *testing.T) {
 	destination := filepath.Join(t.TempDir(), "index")
 	err := BuildIndex(
 		context.Background(),
-		corpus.NewTSVReader(strings.NewReader("0\ta\n")),
+		corpus.NewTSVReader(strings.NewReader("0\tx\n")),
 		destination,
 		BuildOptions{
 			FlushTarget:        1,

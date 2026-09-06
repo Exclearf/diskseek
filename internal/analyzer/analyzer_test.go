@@ -18,7 +18,7 @@ func TestAnalyze(t *testing.T) {
 		{name: "decomposed accent", text: "cafe\u0301", want: []string{"café"}},
 		{name: "Unicode case fold", text: "Straße", want: []string{"strass"}},
 		{name: "apostrophes", text: "'Cat' ’Dog’ Can't rock’n’jazz", want: []string{"cat", "dog", "can't", "rock'n'jazz"}},
-		{name: "Porter2", text: "Engine's engines trees", want: []string{"engin", "engin", "tree"}},
+		{name: "Porter2 and stopwords", text: "The Engine's engines trees", want: []string{"engin", "engin", "tree"}},
 		{name: "mixed scripts", text: "Go 東京", want: []string{"go", "東京"}},
 		{name: "empty", text: "", want: nil},
 		{name: "separators only", text: "---", want: nil},

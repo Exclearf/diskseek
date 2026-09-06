@@ -23,7 +23,7 @@ func TestBuildRunsAtDocumentBoundaries(t *testing.T) {
 		{name: "empty corpus", target: segmentBufferBytes},
 		{
 			name:   "flush when target is reached",
-			input:  "0\ta a\n1\ta b\n",
+			input:  "0\tx x\n1\tx b\n",
 			target: segmentBufferBytes + 14,
 			wantHeaders: []runHeader{
 				{firstDocumentID: 0, documentCount: 1},
@@ -32,7 +32,7 @@ func TestBuildRunsAtDocumentBoundaries(t *testing.T) {
 		},
 		{
 			name:        "flush remaining documents at EOF",
-			input:       "0\ta a\n1\ta b\n",
+			input:       "0\tx x\n1\tx b\n",
 			target:      segmentBufferBytes + 40,
 			wantHeaders: []runHeader{{firstDocumentID: 0, documentCount: 2}},
 		},
@@ -76,7 +76,7 @@ func TestBuildRunsWritesDocumentMetadataAndStatistics(t *testing.T) {
 	documentOutput := &bufferWriteCloser{}
 	stats, err := buildRuns(
 		context.Background(),
-		corpus.NewTSVReader(strings.NewReader("shared\ta a\nshared\t---\nlast\tb\n")),
+		corpus.NewTSVReader(strings.NewReader("shared\tx x\nshared\t---\nlast\tb\n")),
 		segmentBufferBytes+1024,
 		documentOutput,
 		func() (io.WriteCloser, error) {

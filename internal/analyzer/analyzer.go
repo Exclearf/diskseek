@@ -34,7 +34,10 @@ func Analyze(text string) ([]string, error) {
 		if token.Len() == 0 {
 			return
 		}
-		tokens = append(tokens, english.Stem(token.String(), true))
+		term := token.String()
+		if !english.IsStopWord(term) {
+			tokens = append(tokens, english.Stem(term, true))
+		}
 		token.Reset()
 	}
 
