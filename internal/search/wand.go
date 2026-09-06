@@ -81,11 +81,12 @@ func executeWAND(ctx context.Context, idx *indexfile.Index, plan diskQueryPlan, 
 		QueryTerms:   plan.queryTerms,
 		MatchedTerms: uint64(len(plan.terms)),
 	}
+	cursorScratch := make([]wandCursor, 0, len(plan.terms))
 	for {
 		if err := ctx.Err(); err != nil {
 			return nil, QueryStats{}, err
 		}
-		cursors := currentWANDCursors(plan.terms)
+		cursors := currentWANDCursors(plan.terms, cursorScratch)
 		if len(cursors) == 0 {
 			break
 		}
@@ -170,8 +171,8 @@ func executeWAND(ctx context.Context, idx *indexfile.Index, plan diskQueryPlan, 
 	return results, stats, nil
 }
 
-func currentWANDCursors(terms []diskQueryTerm) []wandCursor {
-	cursors := make([]wandCursor, 0, len(terms))
+func currentWANDCursors(terms []diskQueryTerm, scratch []wandCursor) []wandCursor {
+	cursors := scratch[:0]
 	for termIndex, term := range terms {
 		posting, current := term.cursor.Current()
 		if current {
