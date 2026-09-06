@@ -3,6 +3,7 @@ module github.com/Exclearf/diskseek
 go 1.27.0
 
 require (
+	github.com/go-chi/chi/v5 v5.3.2
 	github.com/kljensen/snowball v0.10.0
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/text v0.41.0
