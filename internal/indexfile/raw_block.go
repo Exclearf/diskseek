@@ -11,13 +11,13 @@ import (
 
 const rawPostingBytes = 8
 
-func writeRawPostingBlock(writer io.Writer, postings []index.Posting) error {
+func writeRawPostingBlock(writer io.Writer, encoded []byte, postings []index.Posting) error {
 	payloadBytes, err := rawPostingBlockPayloadBytes(len(postings))
 	if err != nil {
 		return err
 	}
 
-	var encoded [postingBlockHeaderBytes + postingsPerBlock*rawPostingBytes]byte
+	encoded = encoded[:postingBlockHeaderBytes+payloadBytes]
 	binary.LittleEndian.PutUint32(encoded[0:4], uint32(postings[len(postings)-1].DocumentID))
 	binary.LittleEndian.PutUint32(encoded[4:8], uint32(payloadBytes))
 
@@ -27,7 +27,7 @@ func writeRawPostingBlock(writer io.Writer, postings []index.Posting) error {
 		binary.LittleEndian.PutUint32(encoded[offset+4:offset+8], posting.Frequency)
 	}
 
-	if _, err := writer.Write(encoded[:postingBlockHeaderBytes+payloadBytes]); err != nil {
+	if _, err := writer.Write(encoded); err != nil {
 		return fmt.Errorf("write raw posting block: %w", err)
 	}
 	return nil

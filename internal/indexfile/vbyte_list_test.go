@@ -30,7 +30,8 @@ func TestVBytePostingListPartitionsBlocks(t *testing.T) {
 
 			next := 0
 			var encoded bytes.Buffer
-			writtenBytes, err := writeVBytePostingList(&encoded, uint64(len(postings)), func() (index.Posting, error) {
+			var blockBuffer [postingBlockHeaderBytes + maxVBytePostingPayloadBytes]byte
+			writtenBytes, err := writeVBytePostingList(&encoded, blockBuffer[:], uint64(len(postings)), func() (index.Posting, error) {
 				if next == len(postings) {
 					return index.Posting{}, io.EOF
 				}
@@ -73,7 +74,8 @@ func TestReadVBytePostingListRejectsInvalidRangeAndOrder(t *testing.T) {
 
 	next := 0
 	var encoded bytes.Buffer
-	writtenBytes, err := writeVBytePostingList(&encoded, uint64(len(postings)), func() (index.Posting, error) {
+	var blockBuffer [postingBlockHeaderBytes + maxVBytePostingPayloadBytes]byte
+	writtenBytes, err := writeVBytePostingList(&encoded, blockBuffer[:], uint64(len(postings)), func() (index.Posting, error) {
 		posting := postings[next]
 		next++
 		return posting, nil
@@ -102,10 +104,10 @@ func TestReadVBytePostingListRejectsInvalidRangeAndOrder(t *testing.T) {
 	}
 
 	encoded.Reset()
-	if _, err := writeVBytePostingBlock(&encoded, postings[:postingsPerBlock]); err != nil {
+	if _, err := writeVBytePostingBlock(&encoded, blockBuffer[:], postings[:postingsPerBlock]); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := writeVBytePostingBlock(&encoded, []index.Posting{{DocumentID: 0, Frequency: 1}}); err != nil {
+	if _, err := writeVBytePostingBlock(&encoded, blockBuffer[:], []index.Posting{{DocumentID: 0, Frequency: 1}}); err != nil {
 		t.Fatal(err)
 	}
 	if err := readVBytePostingList(
@@ -120,15 +122,16 @@ func TestReadVBytePostingListRejectsInvalidRangeAndOrder(t *testing.T) {
 }
 
 func TestWriteVBytePostingListRejectsInvalidCountAndShortSource(t *testing.T) {
-	if _, err := writeVBytePostingList(io.Discard, 0, nil); err == nil {
+	var blockBuffer [postingBlockHeaderBytes + maxVBytePostingPayloadBytes]byte
+	if _, err := writeVBytePostingList(io.Discard, blockBuffer[:], 0, nil); err == nil {
 		t.Fatal("writeVBytePostingList() error = nil for zero postings")
 	}
-	if _, err := writeVBytePostingList(io.Discard, maxPostingsPerList+1, nil); err == nil {
+	if _, err := writeVBytePostingList(io.Discard, blockBuffer[:], maxPostingsPerList+1, nil); err == nil {
 		t.Fatal("writeVBytePostingList() error = nil for oversized list")
 	}
 
 	read := 0
-	if _, err := writeVBytePostingList(io.Discard, 2, func() (index.Posting, error) {
+	if _, err := writeVBytePostingList(io.Discard, blockBuffer[:], 2, func() (index.Posting, error) {
 		if read == 1 {
 			return index.Posting{}, io.EOF
 		}

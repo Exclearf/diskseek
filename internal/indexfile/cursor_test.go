@@ -251,12 +251,13 @@ func newCursorTestFixture(t testing.TB, postings []index.Posting, codec Postings
 	t.Helper()
 
 	var encoded bytes.Buffer
+	var blockBuffer [postingBlockHeaderBytes + maxVBytePostingPayloadBytes]byte
 	next := 0
 	writePostingList := writeRawPostingList
 	if codec == PostingsCodecVByte {
 		writePostingList = writeVBytePostingList
 	}
-	postingsBytes, err := writePostingList(&encoded, uint64(len(postings)), func() (index.Posting, error) {
+	postingsBytes, err := writePostingList(&encoded, blockBuffer[:], uint64(len(postings)), func() (index.Posting, error) {
 		if next == len(postings) {
 			return index.Posting{}, io.EOF
 		}

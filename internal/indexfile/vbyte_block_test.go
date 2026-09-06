@@ -39,7 +39,8 @@ func TestVBytePostingPayloadBytes(t *testing.T) {
 func TestVBytePostingBlock(t *testing.T) {
 	want := vBytePostingFixturePostings()
 	var encoded bytes.Buffer
-	writtenBytes, err := writeVBytePostingBlock(&encoded, want)
+	var blockBuffer [postingBlockHeaderBytes + maxVBytePostingPayloadBytes]byte
+	writtenBytes, err := writeVBytePostingBlock(&encoded, blockBuffer[:], want)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +69,8 @@ func TestVBytePostingBlock(t *testing.T) {
 
 func TestReadVBytePostingBlockRejectsInvalidEnvelope(t *testing.T) {
 	var encoded bytes.Buffer
-	if _, err := writeVBytePostingBlock(&encoded, vBytePostingFixturePostings()); err != nil {
+	var blockBuffer [postingBlockHeaderBytes + maxVBytePostingPayloadBytes]byte
+	if _, err := writeVBytePostingBlock(&encoded, blockBuffer[:], vBytePostingFixturePostings()); err != nil {
 		t.Fatal(err)
 	}
 	valid := encoded.Bytes()

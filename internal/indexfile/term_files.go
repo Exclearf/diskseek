@@ -24,6 +24,7 @@ func writeTermBodies(
 	if !codec.supported() {
 		return fmt.Errorf("unsupported postings codec ID %d", codec)
 	}
+	var encodedBlock [postingBlockHeaderBytes + maxVBytePostingPayloadBytes]byte
 
 	for {
 		term, documentFrequency, err := nextTerm()
@@ -45,9 +46,9 @@ func writeTermBodies(
 
 		var postingsBytes uint64
 		if codec == PostingsCodecRaw {
-			postingsBytes, err = writeRawPostingList(postings, documentFrequency, observedNextPosting)
+			postingsBytes, err = writeRawPostingList(postings, encodedBlock[:], documentFrequency, observedNextPosting)
 		} else {
-			postingsBytes, err = writeVBytePostingList(postings, documentFrequency, observedNextPosting)
+			postingsBytes, err = writeVBytePostingList(postings, encodedBlock[:], documentFrequency, observedNextPosting)
 		}
 		if err != nil {
 			return fmt.Errorf("write %q postings: %w", term, err)

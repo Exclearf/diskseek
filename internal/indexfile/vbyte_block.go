@@ -87,8 +87,7 @@ func decodeVBytePostingPayload(payload []byte, postings []index.Posting) error {
 	return nil
 }
 
-func writeVBytePostingBlock(writer io.Writer, postings []index.Posting) (int, error) {
-	var encoded [postingBlockHeaderBytes + maxVBytePostingPayloadBytes]byte
+func writeVBytePostingBlock(writer io.Writer, encoded []byte, postings []index.Posting) (int, error) {
 	payloadBytes, err := encodeVBytePostingPayload(encoded[postingBlockHeaderBytes:], postings)
 	if err != nil {
 		return 0, err

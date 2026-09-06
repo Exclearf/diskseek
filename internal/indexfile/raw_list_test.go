@@ -20,7 +20,8 @@ func TestRawPostingListPartitionsBlocks(t *testing.T) {
 
 			next := 0
 			var encoded bytes.Buffer
-			writtenBytes, err := writeRawPostingList(&encoded, uint64(postingCount), func() (index.Posting, error) {
+			var blockBuffer [postingBlockHeaderBytes + postingsPerBlock*rawPostingBytes]byte
+			writtenBytes, err := writeRawPostingList(&encoded, blockBuffer[:], uint64(postingCount), func() (index.Posting, error) {
 				if next == len(postings) {
 					return index.Posting{}, io.EOF
 				}
@@ -84,10 +85,11 @@ func TestReadRawPostingListRejectsInvalidData(t *testing.T) {
 	postings[postingsPerBlock] = index.Posting{DocumentID: 0, Frequency: 1}
 
 	var encoded bytes.Buffer
-	if err := writeRawPostingBlock(&encoded, postings[:postingsPerBlock]); err != nil {
+	var blockBuffer [postingBlockHeaderBytes + postingsPerBlock*rawPostingBytes]byte
+	if err := writeRawPostingBlock(&encoded, blockBuffer[:], postings[:postingsPerBlock]); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeRawPostingBlock(&encoded, postings[postingsPerBlock:]); err != nil {
+	if err := writeRawPostingBlock(&encoded, blockBuffer[:], postings[postingsPerBlock:]); err != nil {
 		t.Fatal(err)
 	}
 	if err := readRawPostingList(
@@ -102,15 +104,16 @@ func TestReadRawPostingListRejectsInvalidData(t *testing.T) {
 }
 
 func TestWriteRawPostingListRejectsInvalidCountAndShortSource(t *testing.T) {
-	if _, err := writeRawPostingList(io.Discard, 0, nil); err == nil {
+	var blockBuffer [postingBlockHeaderBytes + postingsPerBlock*rawPostingBytes]byte
+	if _, err := writeRawPostingList(io.Discard, blockBuffer[:], 0, nil); err == nil {
 		t.Fatal("writeRawPostingList() error = nil for zero postings")
 	}
-	if _, err := writeRawPostingList(io.Discard, maxPostingsPerList+1, nil); err == nil {
+	if _, err := writeRawPostingList(io.Discard, blockBuffer[:], maxPostingsPerList+1, nil); err == nil {
 		t.Fatal("writeRawPostingList() error = nil for oversized list")
 	}
 
 	read := 0
-	if _, err := writeRawPostingList(io.Discard, 2, func() (index.Posting, error) {
+	if _, err := writeRawPostingList(io.Discard, blockBuffer[:], 2, func() (index.Posting, error) {
 		if read == 1 {
 			return index.Posting{}, io.EOF
 		}

@@ -10,6 +10,7 @@ import (
 
 func writeRawPostingList(
 	writer io.Writer,
+	encoded []byte,
 	postingCount uint64,
 	nextPosting func() (index.Posting, error),
 ) (uint64, error) {
@@ -31,7 +32,7 @@ func writeRawPostingList(
 			block[position] = posting
 		}
 
-		if err := writeRawPostingBlock(writer, block[:currentCount]); err != nil {
+		if err := writeRawPostingBlock(writer, encoded, block[:currentCount]); err != nil {
 			return 0, err
 		}
 		remaining -= uint64(currentCount)

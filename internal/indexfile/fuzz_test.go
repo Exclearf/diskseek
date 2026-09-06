@@ -291,12 +291,13 @@ func encodeFuzzPostingList(t testing.TB, codec PostingsCodec, postings []index.P
 	}
 
 	var encoded bytes.Buffer
+	var blockBuffer [postingBlockHeaderBytes + maxVBytePostingPayloadBytes]byte
 	var err error
 	switch codec {
 	case PostingsCodecRaw:
-		_, err = writeRawPostingList(&encoded, uint64(len(postings)), next)
+		_, err = writeRawPostingList(&encoded, blockBuffer[:], uint64(len(postings)), next)
 	case PostingsCodecVByte:
-		_, err = writeVBytePostingList(&encoded, uint64(len(postings)), next)
+		_, err = writeVBytePostingList(&encoded, blockBuffer[:], uint64(len(postings)), next)
 	default:
 		t.Fatalf("unsupported postings codec %d", codec)
 	}

@@ -11,6 +11,7 @@ import (
 
 func writeVBytePostingList(
 	writer io.Writer,
+	encoded []byte,
 	postingCount uint64,
 	nextPosting func() (index.Posting, error),
 ) (uint64, error) {
@@ -32,7 +33,7 @@ func writeVBytePostingList(
 			block[position] = posting
 		}
 
-		blockBytes, err := writeVBytePostingBlock(writer, block[:currentCount])
+		blockBytes, err := writeVBytePostingBlock(writer, encoded, block[:currentCount])
 		if err != nil {
 			return 0, err
 		}

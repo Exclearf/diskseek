@@ -20,7 +20,8 @@ func TestWriteRawPostingBlockBytes(t *testing.T) {
 		{DocumentID: 1, Frequency: 3},
 	}
 	var encoded bytes.Buffer
-	if err := writeRawPostingBlock(&encoded, postings); err != nil {
+	var blockBuffer [postingBlockHeaderBytes + postingsPerBlock*rawPostingBytes]byte
+	if err := writeRawPostingBlock(&encoded, blockBuffer[:], postings); err != nil {
 		t.Fatal(err)
 	}
 	if !bytes.Equal(encoded.Bytes(), []byte(rawPostingBlockFixture)) {
@@ -35,7 +36,8 @@ func TestRawPostingBlockCount(t *testing.T) {
 	}
 
 	var encoded bytes.Buffer
-	if err := writeRawPostingBlock(&encoded, postings); err != nil {
+	var blockBuffer [postingBlockHeaderBytes + postingsPerBlock*rawPostingBytes]byte
+	if err := writeRawPostingBlock(&encoded, blockBuffer[:], postings); err != nil {
 		t.Fatal(err)
 	}
 	if got, want := encoded.Len(), postingBlockHeaderBytes+postingsPerBlock*rawPostingBytes; got != want {
@@ -52,10 +54,10 @@ func TestRawPostingBlockCount(t *testing.T) {
 		t.Fatal("maximum-size block did not round-trip")
 	}
 
-	if err := writeRawPostingBlock(&bytes.Buffer{}, nil); err == nil {
+	if err := writeRawPostingBlock(&bytes.Buffer{}, blockBuffer[:], nil); err == nil {
 		t.Fatal("writeRawPostingBlock() error = nil for empty block")
 	}
-	if err := writeRawPostingBlock(&bytes.Buffer{}, make([]index.Posting, postingsPerBlock+1)); err == nil {
+	if err := writeRawPostingBlock(&bytes.Buffer{}, blockBuffer[:], make([]index.Posting, postingsPerBlock+1)); err == nil {
 		t.Fatal("writeRawPostingBlock() error = nil for oversized block")
 	}
 }
