@@ -62,12 +62,8 @@ func executeDAAT(idx *indexfile.Index, plan diskQueryPlan, k int) ([]result, daa
 	}
 
 	results := collector.finish()
-	for position := range results {
-		externalID, err := idx.ExternalID(results[position].DocumentID)
-		if err != nil {
-			return nil, daatStats{}, fmt.Errorf("resolve document %d: %w", results[position].DocumentID, err)
-		}
-		results[position].ExternalID = externalID
+	if err := resolveExternalIDs(idx, results); err != nil {
+		return nil, daatStats{}, err
 	}
 
 	stats := daatStats{CandidatesScored: candidatesScored}

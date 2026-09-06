@@ -1,11 +1,17 @@
 package search
 
 import (
+	"context"
 	"math"
+	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
+	"github.com/Exclearf/diskseek/internal/corpus"
 	"github.com/Exclearf/diskseek/internal/index"
+	"github.com/Exclearf/diskseek/internal/indexfile"
+	"github.com/Exclearf/diskseek/internal/segment"
 )
 
 func TestSelectWANDPivot(t *testing.T) {
@@ -86,5 +92,103 @@ func TestSelectWANDPivot(t *testing.T) {
 				t.Fatalf("pivot = %+v, want document %d preceding %+v", pivot, test.wantDocument, test.wantPreceding)
 			}
 		})
+	}
+}
+
+func TestExecuteWAND(t *testing.T) {
+	t.Run("equal bound terminates", func(t *testing.T) {
+		const input = "d0\tterm\nd1\tterm\nd2\tterm\n"
+		disk, logical := buildWANDTestIndex(t, input)
+		plan, err := buildDiskQueryPlan(disk, "term")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		got, err := executeWAND(disk, plan, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want, err := referenceSearch(&logical, "term", 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		checkWANDResults(t, got, want, &logical)
+
+		stats := plan.terms[0].cursor.Stats()
+		if stats.NextCalls != 1 || stats.AdvanceCalls != 0 {
+			t.Fatalf("cursor calls = next %d, advance %d; want 1, 0", stats.NextCalls, stats.AdvanceCalls)
+		}
+	})
+
+	t.Run("unaligned pivot advances highest IDF term", func(t *testing.T) {
+		const input = "d0\tseed seed seed seed\n" +
+			"d1\tcommon\n" +
+			"d2\tcommon rare\n" +
+			"d3\tcommon pivot\n" +
+			"d4\tcommon\n"
+		disk, logical := buildWANDTestIndex(t, input)
+		plan, err := buildDiskQueryPlan(disk, "seed common rare pivot")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		got, err := executeWAND(disk, plan, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want, err := referenceSearch(&logical, "seed common rare pivot", 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		checkWANDResults(t, got, want, &logical)
+
+		for _, term := range plan.terms {
+			var want uint64
+			if term.term == "rare" {
+				want = 1
+			}
+			if got := term.cursor.Stats().AdvanceCalls; got != want {
+				t.Fatalf("%q advance calls = %d, want %d", term.term, got, want)
+			}
+		}
+	})
+}
+
+func buildWANDTestIndex(t *testing.T, input string) (*indexfile.Index, index.Index) {
+	t.Helper()
+	logical, err := index.Build(corpus.NewTSVReader(strings.NewReader(input)))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	destination := filepath.Join(t.TempDir(), "index")
+	err = segment.BuildIndex(
+		context.Background(),
+		corpus.NewTSVReader(strings.NewReader(input)),
+		destination,
+		segment.BuildOptions{
+			FlushTarget:        1,
+			MergeFanIn:         2,
+			MergeWorkers:       2,
+			Codec:              indexfile.PostingsCodecVByte,
+			TemporaryDirectory: t.TempDir(),
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return openDiskTestIndex(t, destination), logical
+}
+
+func checkWANDResults(t *testing.T, got, want []result, logical *index.Index) {
+	t.Helper()
+	if !equalResultBits(got, want) {
+		t.Fatalf("WAND results = %+v, want %+v", got, want)
+	}
+	for position := range got {
+		wantExternalID := logical.Documents[got[position].DocumentID].ExternalID
+		if got[position].ExternalID != wantExternalID {
+			t.Fatalf("result %d external ID = %q, want %q", position, got[position].ExternalID, wantExternalID)
+		}
 	}
 }

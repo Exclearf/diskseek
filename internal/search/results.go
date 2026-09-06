@@ -3,9 +3,11 @@ package search
 import (
 	"cmp"
 	"container/heap"
+	"fmt"
 	"slices"
 
 	"github.com/Exclearf/diskseek/internal/index"
+	"github.com/Exclearf/diskseek/internal/indexfile"
 )
 
 type result struct {
@@ -64,6 +66,17 @@ func (t *topK) finish() []result {
 	results := []result(t.items)
 	slices.SortFunc(results, compareResults)
 	return results
+}
+
+func resolveExternalIDs(idx *indexfile.Index, results []result) error {
+	for position := range results {
+		externalID, err := idx.ExternalID(results[position].DocumentID)
+		if err != nil {
+			return fmt.Errorf("resolve document %d: %w", results[position].DocumentID, err)
+		}
+		results[position].ExternalID = externalID
+	}
+	return nil
 }
 
 type resultHeap []result
