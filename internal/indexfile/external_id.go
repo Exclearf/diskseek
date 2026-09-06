@@ -35,14 +35,18 @@ func (i *Index) ExternalID(documentID index.DocumentID) (string, error) {
 		return "", errors.New("document offset is outside the data body")
 	}
 
-	externalID, err := readExternalID(
-		io.NewSectionReader(i.documentData, int64(fileHeaderBytes+start), int64(end-start)),
-		end-start,
-	)
-	if err != nil {
+	length := end - start
+	if length > corpus.MaxExternalIDBytes {
+		return "", fmt.Errorf("read document %d external ID: invalid external document ID length", documentID)
+	}
+	externalID := make([]byte, int(length))
+	if err := readAtExact(i.documentData, externalID, int64(fileHeaderBytes+start)); err != nil {
 		return "", fmt.Errorf("read document %d external ID: %w", documentID, err)
 	}
-	return externalID, nil
+	if !utf8.Valid(externalID) {
+		return "", fmt.Errorf("read document %d external ID: external document ID is not valid UTF-8", documentID)
+	}
+	return string(externalID), nil
 }
 
 func readExternalID(reader io.Reader, length uint64) (string, error) {
