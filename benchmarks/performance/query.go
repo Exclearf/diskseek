@@ -17,7 +17,6 @@ import (
 )
 
 type queryOptions struct {
-	runID        string
 	repetition   int
 	executor     search.Executor
 	executorName string
@@ -26,7 +25,6 @@ type queryOptions struct {
 }
 
 type queryObservation struct {
-	RunID                 string `json:"run_id"`
 	Repetition            int    `json:"repetition"`
 	Codec                 string `json:"codec"`
 	Executor              string `json:"executor"`
@@ -78,7 +76,6 @@ func runQueries(
 		elapsed := time.Since(started)
 
 		observation := queryObservation{
-			RunID:                 options.runID,
 			Repetition:            options.repetition,
 			Codec:                 codec,
 			Executor:              options.executorName,

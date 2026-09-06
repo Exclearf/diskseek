@@ -16,7 +16,6 @@ import (
 const buildJobEnvironment = "DISKSEEK_BENCHMARK_BUILD_JOB"
 
 type benchmarkConfig struct {
-	RunID              string      `json:"run_id"`
 	CorpusPath         string      `json:"corpus"`
 	OutputDirectory    string      `json:"output_directory"`
 	IndexDirectory     string      `json:"index_directory"`
@@ -32,7 +31,6 @@ type buildConfig struct {
 }
 
 type buildJob struct {
-	RunID              string `json:"run_id"`
 	CorpusPath         string `json:"corpus"`
 	TemporaryDirectory string `json:"temporary_directory"`
 	Codec              string `json:"codec"`
@@ -110,7 +108,6 @@ func runBuildPlan(ctx context.Context, config benchmarkConfig) error {
 		}
 		for _, codec := range codecs {
 			job := buildJob{
-				RunID:              config.RunID,
 				CorpusPath:         config.CorpusPath,
 				TemporaryDirectory: config.TemporaryDirectory,
 				Codec:              codec,

@@ -21,14 +21,12 @@ import (
 const formatPostingsPerBlock = 128
 
 type buildOptions struct {
-	runID      string
 	repetition int
 	codecName  string
 	build      segment.BuildOptions
 }
 
 type buildObservation struct {
-	RunID                    string `json:"run_id"`
 	Repetition               int    `json:"repetition"`
 	Codec                    string `json:"codec"`
 	FlushTargetBytes         uint64 `json:"flush_target_bytes"`
@@ -89,7 +87,6 @@ func runBuildJob(ctx context.Context, encodedJob string, output io.Writer) error
 		return err
 	}
 	return runBuild(ctx, job.CorpusPath, job.Destination, buildOptions{
-		runID:      job.RunID,
 		repetition: job.Repetition,
 		codecName:  job.Codec,
 		build: segment.BuildOptions{
@@ -142,7 +139,6 @@ func runBuild(
 	}
 
 	observation := buildObservation{
-		RunID:                    options.runID,
 		Repetition:               options.repetition,
 		Codec:                    options.codecName,
 		FlushTargetBytes:         options.build.FlushTarget,

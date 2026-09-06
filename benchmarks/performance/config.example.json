@@ -1,5 +1,4 @@
 {
-  "run_id": "stage15-build-baseline",
   "corpus": "/path/to/collection.tsv",
   "output_directory": "/path/to/results",
   "index_directory": "/path/to/indexes",

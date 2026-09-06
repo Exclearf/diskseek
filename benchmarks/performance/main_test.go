@@ -45,7 +45,6 @@ func TestRunQueriesWritesMeasuredRows(t *testing.T) {
 	queries := []string{"go", "missing", string([]byte{0xff})}
 	var output bytes.Buffer
 	err = runQueries(context.Background(), idx, queries, queryOptions{
-		runID:        "test-run",
 		repetition:   2,
 		executor:     search.ExecutorDAAT,
 		executorName: "daat",
@@ -68,8 +67,7 @@ func TestRunQueriesWritesMeasuredRows(t *testing.T) {
 		t.Fatalf("decode after final row: %v", err)
 	}
 
-	if records[0].RunID != "test-run" ||
-		records[0].Repetition != 2 ||
+	if records[0].Repetition != 2 ||
 		records[0].Codec != "vbyte" ||
 		records[0].Executor != "daat" ||
 		records[0].Limit != 3 ||
