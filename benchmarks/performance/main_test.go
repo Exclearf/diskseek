@@ -23,9 +23,14 @@ func TestDigestResultsCoversResultIdentity(t *testing.T) {
 	if digestResults(reordered) == want {
 		t.Fatal("result order did not change digest")
 	}
-	changedID := append([]search.MeasuredResult(nil), results...)
-	changedID[0].ExternalID = "other"
-	if digestResults(changedID) == want {
+	changedDocumentID := append([]search.MeasuredResult(nil), results...)
+	changedDocumentID[0].DocumentID++
+	if digestResults(changedDocumentID) == want {
+		t.Fatal("document ID did not change digest")
+	}
+	changedExternalID := append([]search.MeasuredResult(nil), results...)
+	changedExternalID[0].ExternalID = "other"
+	if digestResults(changedExternalID) == want {
 		t.Fatal("external ID did not change digest")
 	}
 	changedScore := append([]search.MeasuredResult(nil), results...)
