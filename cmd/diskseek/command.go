@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -96,10 +97,17 @@ func parseCodec(name string) (indexfile.PostingsCodec, error) {
 
 func newQueryCommand() *cobra.Command {
 	limit := 10
+	batch := false
 	command := &cobra.Command{
-		Use:   "query INDEX QUERY",
-		Short: "Search an index",
-		Args:  cobra.ExactArgs(2),
+		Use:     "query INDEX [QUERY]",
+		Short:   "Search an index",
+		Example: "  diskseek query --batch INDEX QUERIES",
+		Args: func(command *cobra.Command, args []string) error {
+			if batch {
+				return cobra.RangeArgs(1, 2)(command, args)
+			}
+			return cobra.ExactArgs(2)(command, args)
+		},
 		RunE: func(command *cobra.Command, args []string) error {
 			if limit <= 0 {
 				return errors.New("query limit must be positive")
@@ -110,6 +118,22 @@ func newQueryCommand() *cobra.Command {
 				return fmt.Errorf("open index: %w", err)
 			}
 			defer idx.Close()
+
+			if batch {
+				input := command.InOrStdin()
+				if len(args) == 2 {
+					file, err := os.Open(args[1])
+					if err != nil {
+						return fmt.Errorf("open queries: %w", err)
+					}
+					defer file.Close()
+					input = file
+				}
+				if err := runQueryBatch(command.Context(), idx, input, command.OutOrStdout(), limit); err != nil {
+					return fmt.Errorf("query batch: %w", err)
+				}
+				return nil
+			}
 
 			results, err := search.Search(command.Context(), idx, args[1], limit)
 			if err != nil {
@@ -125,7 +149,49 @@ func newQueryCommand() *cobra.Command {
 		},
 	}
 	command.Flags().IntVar(&limit, "limit", limit, "maximum number of results")
+	command.Flags().BoolVar(&batch, "batch", batch, "read query-ID/query TSV records from a file or standard input")
 	return command
+}
+
+func runQueryBatch(
+	ctx context.Context,
+	idx *indexfile.Index,
+	input io.Reader,
+	output io.Writer,
+	limit int,
+) error {
+	queries := corpus.NewTSVReader(input)
+	writer := bufio.NewWriter(output)
+	for {
+		query, err := queries.Next()
+		if errors.Is(err, io.EOF) {
+			if err := writer.Flush(); err != nil {
+				return fmt.Errorf("write results: %w", err)
+			}
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("read query: %w", err)
+		}
+
+		results, err := search.Search(ctx, idx, query.Text, limit)
+		if err != nil {
+			return fmt.Errorf("search query %q: %w", query.ExternalID, err)
+		}
+		for position, result := range results {
+			score := strconv.FormatFloat(result.Score, 'g', -1, 64)
+			if _, err := fmt.Fprintf(
+				writer,
+				"%s\t%s\t%d\t%s\n",
+				query.ExternalID,
+				result.ExternalID,
+				position+1,
+				score,
+			); err != nil {
+				return fmt.Errorf("write results: %w", err)
+			}
+		}
+	}
 }
 
 func newVerifyCommand() *cobra.Command {

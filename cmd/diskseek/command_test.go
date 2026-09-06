@@ -105,6 +105,51 @@ func TestQueryCommand(t *testing.T) {
 	}
 }
 
+func TestQueryBatch(t *testing.T) {
+	indexPath := filepath.Join("..", "..", "internal", "indexfile", "testdata", "golden-v1", "vbyte")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	command := newRootCommand(testVersion, &stdout, &stderr)
+	command.SetIn(strings.NewReader("q1\tsearch go\nq2\tgo\n"))
+	command.SetArgs([]string{"query", "--batch", indexPath, "--limit", "2"})
+	if err := command.Execute(); err != nil {
+		t.Fatalf("execute query batch: %v; stderr = %q", err, stderr.String())
+	}
+
+	want := [][3]string{
+		{"q1", "a", "1"},
+		{"q1", "b", "2"},
+		{"q2", "b", "1"},
+		{"q2", "a", "2"},
+	}
+	lines := strings.Split(strings.TrimSuffix(stdout.String(), "\n"), "\n")
+	if len(lines) != len(want) {
+		t.Fatalf("result rows = %d, want %d; stdout = %q", len(lines), len(want), stdout.String())
+	}
+	for position, line := range lines {
+		fields := strings.Split(line, "\t")
+		if len(fields) != 4 {
+			t.Fatalf("row %d fields = %d, want 4; row = %q", position, len(fields), line)
+		}
+		if got := [3]string{fields[0], fields[1], fields[2]}; got != want[position] {
+			t.Fatalf("row %d identity and rank = %v, want %v", position, got, want[position])
+		}
+		if _, err := strconv.ParseFloat(fields[3], 64); err != nil {
+			t.Fatalf("row %d score %q is not a float", position, fields[3])
+		}
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	command = newRootCommand(testVersion, &stdout, &stderr)
+	command.SetIn(strings.NewReader("q1\tgo\nmalformed\n"))
+	command.SetArgs([]string{"query", "--batch", indexPath})
+	if err := command.Execute(); err == nil {
+		t.Fatal("malformed query batch succeeded")
+	}
+}
+
 func TestVerifyCommand(t *testing.T) {
 	indexPath := filepath.Join("..", "..", "internal", "indexfile", "testdata", "golden-v1", "vbyte")
 
