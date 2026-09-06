@@ -5,6 +5,7 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -16,7 +17,7 @@ import (
 )
 
 func TestSearchUsesSelectedDataset(t *testing.T) {
-	wiki := openTestIndex(t, strings.Join([]string{
+	wiki := openTestDataset(t, strings.Join([]string{
 		"shared\tcomputer science",
 		"wiki-1\tcomputer",
 		"wiki-2\tcomputer",
@@ -24,9 +25,7 @@ func TestSearchUsesSelectedDataset(t *testing.T) {
 		"wiki-4\tcomputer",
 		"wiki-5\tcomputer",
 		"",
-	}, "\n"))
-	bee := openTestIndex(t, "shared\thoney bee\nbee\tbee bee\n")
-	wikiCatalog := loadTestCatalog(t, strings.Join([]string{
+	}, "\n"), strings.Join([]string{
 		`{"external_id":"shared","title":"Shared wiki page","preview":"Computer science","source_url":"https://example.com/shared"}`,
 		`{"external_id":"wiki-1","title":"Computer 1","preview":"Preview 1","source_url":"https://example.com/1"}`,
 		`{"external_id":"wiki-2","title":"Computer 2","preview":"Preview 2","source_url":"https://example.com/2"}`,
@@ -34,13 +33,13 @@ func TestSearchUsesSelectedDataset(t *testing.T) {
 		`{"external_id":"wiki-4","title":"Computer 4","preview":"Preview 4","source_url":"https://example.com/4"}`,
 		`{"external_id":"wiki-5","title":"Computer 5","preview":"Preview 5","source_url":"https://example.com/5"}`,
 	}, "\n"))
-	beeCatalog := loadTestCatalog(t, strings.Join([]string{
+	bee := openTestDataset(t, "shared\thoney bee\nbee\tbee bee\n", strings.Join([]string{
 		`{"external_id":"shared","title":"Shared bee passage","preview":"Honey bee","source_url":"https://example.com/bee/shared"}`,
 		`{"external_id":"bee","title":"Bee passage","preview":"Bee bee","source_url":"https://example.com/bee"}`,
 	}, "\n"))
 	handler := New(map[string]Dataset{
-		"wiki": {Index: wiki, Catalog: wikiCatalog},
-		"bee":  {Index: bee, Catalog: beeCatalog},
+		"wiki": wiki,
+		"bee":  bee,
 	})
 
 	for _, test := range []struct {
@@ -50,8 +49,8 @@ func TestSearchUsesSelectedDataset(t *testing.T) {
 		catalog   map[string]Document
 		wantCount int
 	}{
-		{dataset: "wiki", query: "computer", index: wiki, catalog: wikiCatalog, wantCount: 5},
-		{dataset: "bee", query: "bee", index: bee, catalog: beeCatalog, wantCount: 2},
+		{dataset: "wiki", query: "computer", index: wiki.Index, catalog: wiki.Catalog, wantCount: 5},
+		{dataset: "bee", query: "bee", index: bee.Index, catalog: bee.Catalog, wantCount: 2},
 	} {
 		t.Run(test.dataset, func(t *testing.T) {
 			body := `{"dataset":"` + test.dataset + `","query":"` + test.query + `"}`
@@ -87,7 +86,8 @@ func TestSearchUsesSelectedDataset(t *testing.T) {
 }
 
 func TestSearchRejectsInvalidRequest(t *testing.T) {
-	handler := New(map[string]Dataset{"wiki": {Index: openTestIndex(t, "doc\tgo\n")}})
+	dataset := openTestDataset(t, "doc\tgo\n", `{"external_id":"doc","title":"Document"}`)
+	handler := New(map[string]Dataset{"wiki": dataset})
 	for _, body := range []string{
 		`{"dataset":"other","query":"go"}`,
 		`{"dataset":"wiki","query":"go"}` + strings.Repeat(" ", maxRequestBodyBytes),
@@ -115,7 +115,7 @@ func TestLoadCatalogRejectsInvalidMetadata(t *testing.T) {
 
 func TestSearchFailsWithoutResultMetadata(t *testing.T) {
 	handler := New(map[string]Dataset{
-		"wiki": {Index: openTestIndex(t, "doc\tgo\n")},
+		"wiki": openTestDataset(t, "doc\tgo\n", ""),
 	})
 	request := httptest.NewRequest(
 		http.MethodPost,
@@ -131,21 +131,12 @@ func TestSearchFailsWithoutResultMetadata(t *testing.T) {
 	}
 }
 
-func loadTestCatalog(t *testing.T, input string) map[string]Document {
-	t.Helper()
-	catalog, err := LoadCatalog(strings.NewReader(input))
-	if err != nil {
-		t.Fatalf("load catalog: %v", err)
-	}
-	return catalog
-}
-
-func openTestIndex(t *testing.T, input string) *indexfile.Index {
+func openTestDataset(t *testing.T, corpusInput, catalogInput string) Dataset {
 	t.Helper()
 	destination := filepath.Join(t.TempDir(), "index")
 	_, err := segment.BuildIndex(
 		t.Context(),
-		corpus.NewTSVReader(strings.NewReader(input)),
+		corpus.NewTSVReader(strings.NewReader(corpusInput)),
 		destination,
 		segment.BuildOptions{
 			FlushTarget:  1 << 20,
@@ -157,14 +148,17 @@ func openTestIndex(t *testing.T, input string) *indexfile.Index {
 	if err != nil {
 		t.Fatalf("build test index: %v", err)
 	}
-	idx, err := indexfile.Open(destination)
+	if err := os.WriteFile(filepath.Join(destination, catalogFileName), []byte(catalogInput), 0o600); err != nil {
+		t.Fatalf("write test catalog: %v", err)
+	}
+	dataset, err := OpenDataset(destination)
 	if err != nil {
-		t.Fatalf("open test index: %v", err)
+		t.Fatalf("open test dataset: %v", err)
 	}
 	t.Cleanup(func() {
-		if err := idx.Close(); err != nil {
+		if err := dataset.Index.Close(); err != nil {
 			t.Errorf("close test index: %v", err)
 		}
 	})
-	return idx
+	return dataset
 }

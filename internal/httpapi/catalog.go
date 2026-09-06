@@ -3,10 +3,17 @@ package httpapi
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/url"
+	"os"
+	"path/filepath"
+
+	"github.com/Exclearf/diskseek/internal/indexfile"
 )
+
+const catalogFileName = "catalog.jsonl"
 
 type Document struct {
 	ExternalID string `json:"external_id"`
@@ -41,4 +48,21 @@ func LoadCatalog(input io.Reader) (map[string]Document, error) {
 		return nil, fmt.Errorf("read catalog: %w", err)
 	}
 	return documents, nil
+}
+
+func OpenDataset(directory string) (Dataset, error) {
+	idx, err := indexfile.Open(directory)
+	if err != nil {
+		return Dataset{}, err
+	}
+
+	input, err := os.Open(filepath.Join(directory, catalogFileName))
+	if err != nil {
+		return Dataset{}, errors.Join(err, idx.Close())
+	}
+	catalog, loadErr := LoadCatalog(input)
+	if err := errors.Join(loadErr, input.Close()); err != nil {
+		return Dataset{}, errors.Join(err, idx.Close())
+	}
+	return Dataset{Index: idx, Catalog: catalog}, nil
 }
