@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"bytes"
 	"encoding/json"
 	"math"
 	"net/http"
@@ -16,9 +17,9 @@ import (
 	"github.com/Exclearf/diskseek/internal/segment"
 )
 
-func TestSearchUsesSelectedDataset(t *testing.T) {
+func TestSearch(t *testing.T) {
 	wiki := openTestDataset(t, strings.Join([]string{
-		"shared\tcomputer science",
+		"wiki\tcomputer science",
 		"wiki-1\tcomputer",
 		"wiki-2\tcomputer",
 		"wiki-3\tcomputer",
@@ -26,35 +27,32 @@ func TestSearchUsesSelectedDataset(t *testing.T) {
 		"wiki-5\tcomputer",
 		"",
 	}, "\n"), strings.Join([]string{
-		`{"external_id":"shared","title":"Shared wiki page","preview":"Computer science","source_url":"https://example.com/shared"}`,
+		`{"external_id":"wiki","title":"Computer science","preview":"Computer science","source_url":"https://example.com/wiki"}`,
 		`{"external_id":"wiki-1","title":"Computer 1","preview":"Preview 1","source_url":"https://example.com/1"}`,
 		`{"external_id":"wiki-2","title":"Computer 2","preview":"Preview 2","source_url":"https://example.com/2"}`,
 		`{"external_id":"wiki-3","title":"Computer 3","preview":"Preview 3","source_url":"https://example.com/3"}`,
 		`{"external_id":"wiki-4","title":"Computer 4","preview":"Preview 4","source_url":"https://example.com/4"}`,
 		`{"external_id":"wiki-5","title":"Computer 5","preview":"Preview 5","source_url":"https://example.com/5"}`,
 	}, "\n"))
-	bee := openTestDataset(t, "shared\thoney bee\nbee\tbee bee\n", strings.Join([]string{
-		`{"external_id":"shared","title":"Shared bee passage","preview":"Honey bee","source_url":"https://example.com/bee/shared"}`,
-		`{"external_id":"bee","title":"Bee passage","preview":"Bee bee","source_url":"https://example.com/bee"}`,
-	}, "\n"))
-	handler := New(map[string]Dataset{
-		"wiki": wiki,
-		"bee":  bee,
-	})
+	handler := New(wiki)
 
 	for _, test := range []struct {
-		dataset   string
+		name      string
 		query     string
+		limit     int
 		index     *indexfile.Index
 		catalog   map[string]Document
 		wantCount int
 	}{
-		{dataset: "wiki", query: "computer", index: wiki.Index, catalog: wiki.Catalog, wantCount: 5},
-		{dataset: "bee", query: "bee", index: bee.Index, catalog: bee.Catalog, wantCount: 2},
+		{name: "default limit", query: "computer", index: wiki.Index, catalog: wiki.Catalog, wantCount: 5},
+		{name: "requested limit", query: "computer", limit: 2, index: wiki.Index, catalog: wiki.Catalog, wantCount: 2},
 	} {
-		t.Run(test.dataset, func(t *testing.T) {
-			body := `{"dataset":"` + test.dataset + `","query":"` + test.query + `"}`
-			request := httptest.NewRequest(http.MethodPost, "/v1/search", strings.NewReader(body))
+		t.Run(test.name, func(t *testing.T) {
+			body, err := json.Marshal(searchRequest{Query: test.query, Limit: test.limit})
+			if err != nil {
+				t.Fatal(err)
+			}
+			request := httptest.NewRequest(http.MethodPost, "/v1/search", bytes.NewReader(body))
 			response := httptest.NewRecorder()
 			handler.ServeHTTP(response, request)
 			if response.Code != http.StatusOK {
@@ -65,7 +63,14 @@ func TestSearchUsesSelectedDataset(t *testing.T) {
 			if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil {
 				t.Fatalf("decode response: %v", err)
 			}
-			want, err := search.Search(t.Context(), test.index, test.query, resultLimit)
+			if got.SearchMS <= 0 {
+				t.Fatalf("search_ms = %v, want a positive duration", got.SearchMS)
+			}
+			limit := test.limit
+			if limit == 0 {
+				limit = defaultResultLimit
+			}
+			want, err := search.Search(t.Context(), test.index, test.query, limit)
 			if err != nil {
 				t.Fatalf("direct search: %v", err)
 			}
@@ -87,10 +92,10 @@ func TestSearchUsesSelectedDataset(t *testing.T) {
 
 func TestSearchRejectsInvalidRequest(t *testing.T) {
 	dataset := openTestDataset(t, "doc\tgo\n", `{"external_id":"doc","title":"Document"}`)
-	handler := New(map[string]Dataset{"wiki": dataset})
+	handler := New(dataset)
 	for _, body := range []string{
-		`{"dataset":"other","query":"go"}`,
-		`{"dataset":"wiki","query":"go"}` + strings.Repeat(" ", maxRequestBodyBytes),
+		`{"query":"go","limit":21}`,
+		`{"query":"go"}` + strings.Repeat(" ", maxRequestBodyBytes),
 	} {
 		request := httptest.NewRequest(http.MethodPost, "/v1/search", strings.NewReader(body))
 		response := httptest.NewRecorder()
@@ -114,13 +119,11 @@ func TestLoadCatalogRejectsInvalidMetadata(t *testing.T) {
 }
 
 func TestSearchFailsWithoutResultMetadata(t *testing.T) {
-	handler := New(map[string]Dataset{
-		"wiki": openTestDataset(t, "doc\tgo\n", ""),
-	})
+	handler := New(openTestDataset(t, "doc\tgo\n", ""))
 	request := httptest.NewRequest(
 		http.MethodPost,
 		"/v1/search",
-		strings.NewReader(`{"dataset":"wiki","query":"go"}`),
+		strings.NewReader(`{"query":"go"}`),
 	)
 	response := httptest.NewRecorder()
 

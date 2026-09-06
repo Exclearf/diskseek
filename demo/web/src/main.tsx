@@ -1,16 +1,24 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { CssBaseline, ThemeProvider, createTheme } from '@mui/material'
+import { CssBaseline, InitColorSchemeScript, ThemeProvider, createTheme } from '@mui/material'
 import App from './App'
 
 const theme = createTheme({
-  palette: {
-    primary: {
-      main: '#1a73e8',
+  cssVariables: { colorSchemeSelector: 'class' },
+  colorSchemes: {
+    light: {
+      palette: {
+        primary: { main: '#4c637d' },
+        background: { default: '#f7f8fa', paper: '#ffffff' },
+        text: { primary: '#1f2328', secondary: '#656d76' },
+      },
     },
-    text: {
-      primary: '#202124',
-      secondary: '#5f6368',
+    dark: {
+      palette: {
+        primary: { main: '#a9bdd3' },
+        background: { default: '#17191c', paper: '#212428' },
+        text: { primary: '#f0f2f4', secondary: '#b2b8c0' },
+      },
     },
   },
   typography: {
@@ -19,11 +27,15 @@ const theme = createTheme({
       textTransform: 'none',
     },
   },
+  components: {
+    MuiButton: { defaultProps: { disableElevation: true } },
+  },
 })
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <ThemeProvider theme={theme}>
+    <InitColorSchemeScript attribute="class" modeStorageKey="diskseek-mode" />
+    <ThemeProvider theme={theme} defaultMode="system" modeStorageKey="diskseek-mode" disableTransitionOnChange>
       <CssBaseline />
       <App />
     </ThemeProvider>

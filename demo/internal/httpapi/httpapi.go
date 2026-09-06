@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/Exclearf/diskseek/internal/indexfile"
 	"github.com/Exclearf/diskseek/internal/search"
@@ -12,12 +13,13 @@ import (
 
 const (
 	maxRequestBodyBytes = 8 << 10
-	resultLimit         = 5
+	defaultResultLimit  = 5
+	maxResultLimit      = 20
 )
 
 type searchRequest struct {
-	Dataset string `json:"dataset"`
-	Query   string `json:"query"`
+	Query string `json:"query"`
+	Limit int    `json:"limit"`
 }
 
 type searchResult struct {
@@ -27,7 +29,8 @@ type searchResult struct {
 }
 
 type searchResponse struct {
-	Results []searchResult `json:"results"`
+	Results  []searchResult `json:"results"`
+	SearchMS float64        `json:"search_ms"`
 }
 
 type Dataset struct {
@@ -35,7 +38,7 @@ type Dataset struct {
 	Catalog map[string]Document
 }
 
-func New(datasets map[string]Dataset) http.Handler {
+func New(dataset Dataset) http.Handler {
 	router := chi.NewRouter()
 	router.Post("/v1/search", func(response http.ResponseWriter, request *http.Request) {
 		var input searchRequest
@@ -44,14 +47,17 @@ func New(datasets map[string]Dataset) http.Handler {
 			http.Error(response, "invalid request", http.StatusBadRequest)
 			return
 		}
-
-		dataset, exists := datasets[input.Dataset]
-		if !exists || dataset.Index == nil {
-			http.Error(response, "unknown dataset", http.StatusBadRequest)
+		if input.Limit == 0 {
+			input.Limit = defaultResultLimit
+		}
+		if input.Limit < 1 || input.Limit > maxResultLimit {
+			http.Error(response, "invalid request", http.StatusBadRequest)
 			return
 		}
 
-		results, err := search.Search(request.Context(), dataset.Index, input.Query, resultLimit)
+		started := time.Now()
+		results, err := search.Search(request.Context(), dataset.Index, input.Query, input.Limit)
+		searchDuration := time.Since(started)
 		if err != nil {
 			http.Error(response, "search failed", http.StatusInternalServerError)
 			return
@@ -72,7 +78,10 @@ func New(datasets map[string]Dataset) http.Handler {
 		}
 
 		response.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(response).Encode(searchResponse{Results: output})
+		_ = json.NewEncoder(response).Encode(searchResponse{
+			Results:  output,
+			SearchMS: float64(searchDuration) / float64(time.Millisecond),
+		})
 	})
 	return router
 }

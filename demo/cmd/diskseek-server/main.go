@@ -30,40 +30,32 @@ func main() {
 
 func newCommand() *cobra.Command {
 	listenAddress := defaultListenAddress
-	datasetPaths := make(map[string]string)
+	datasetPath := ""
 	command := &cobra.Command{
 		Use:   "diskseek-server",
 		Short: "Serve DiskSeek indexes over HTTP",
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) (err error) {
-			if len(datasetPaths) == 0 {
-				return errors.New("at least one dataset is required")
+			if datasetPath == "" {
+				return errors.New("dataset is required")
 			}
 			frontend, err := webui.New()
 			if err != nil {
 				return err
 			}
 
-			datasets := make(map[string]httpapi.Dataset, len(datasetPaths))
-			defer func() {
-				for _, dataset := range datasets {
-					err = errors.Join(err, dataset.Index.Close())
-				}
-			}()
-			for name, path := range datasetPaths {
-				dataset, err := httpapi.OpenDataset(path)
-				if err != nil {
-					return fmt.Errorf("open dataset %q: %w", name, err)
-				}
-				datasets[name] = dataset
+			dataset, err := httpapi.OpenDataset(datasetPath)
+			if err != nil {
+				return fmt.Errorf("open dataset: %w", err)
 			}
+			defer func() { err = errors.Join(err, dataset.Index.Close()) }()
 
 			listener, err := net.Listen("tcp", listenAddress)
 			if err != nil {
 				return fmt.Errorf("listen: %w", err)
 			}
 			handler := http.NewServeMux()
-			handler.Handle("/v1/", httpapi.New(datasets))
+			handler.Handle("/v1/", httpapi.New(dataset))
 			handler.Handle("/", frontend)
 			server := http.Server{Handler: handler}
 			stop := context.AfterFunc(command.Context(), func() {
@@ -78,6 +70,6 @@ func newCommand() *cobra.Command {
 		},
 	}
 	command.Flags().StringVar(&listenAddress, "listen", listenAddress, "HTTP listen address")
-	command.Flags().StringToStringVar(&datasetPaths, "dataset", datasetPaths, "dataset as ID=BUNDLE")
+	command.Flags().StringVar(&datasetPath, "dataset", datasetPath, "dataset bundle")
 	return command
 }
