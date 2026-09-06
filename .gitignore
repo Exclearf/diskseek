@@ -12,6 +12,9 @@
 *.prof
 coverage.out
 
+/web/node_modules/
+/web/dist/
+
 /.idea/
 /.vscode/
 .DS_Store

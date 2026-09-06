@@ -21,6 +21,7 @@ type searchRequest struct {
 }
 
 type searchResult struct {
+	ExternalID string `json:"external_id"`
 	Document
 	Score float64 `json:"score"`
 }
@@ -64,8 +65,9 @@ func New(datasets map[string]Dataset) http.Handler {
 				return
 			}
 			output[position] = searchResult{
-				Document: document,
-				Score:    result.Score,
+				ExternalID: result.ExternalID,
+				Document:   document,
+				Score:      result.Score,
 			}
 		}
 
