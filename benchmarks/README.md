@@ -26,9 +26,8 @@ VByte made the index 62.03% smaller. It took 1.42% longer to build and 5.40% to
 
 - Corpus: [MS MARCO Passage v1](https://microsoft.github.io/msmarco/), 8.8 million
   passages
-- Queries: all 6,980 development queries, run sequentially with prewarmed index
-  files
-- Repetitions: three per scenario, with 500 warm-up queries
+- Queries: all 6,980 development queries in sequence, with prewarmed index files
+- Repetitions: three runs per scenario, each after 500 warm-up queries
 - Machine: Intel Core Ultra 5 225H, 16 GB RAM, Linux
 - Build: 64 MiB flush target, fan-in 16, one merge worker, 128 postings per
   block
