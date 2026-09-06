@@ -122,7 +122,10 @@ func runBuildPlan(ctx context.Context, config benchmarkConfig) error {
 			}
 		}
 	}
-	return output.Close()
+	if err := output.Close(); err != nil {
+		return err
+	}
+	return writeResults(config.OutputDirectory)
 }
 
 func runBuildProcess(ctx context.Context, executable string, job buildJob, output io.Writer) error {

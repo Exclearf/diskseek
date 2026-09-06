@@ -35,6 +35,35 @@ func TestDigestResultsCoversResultIdentity(t *testing.T) {
 	}
 }
 
+func TestSummarizeBuild(t *testing.T) {
+	observation := buildObservation{
+		Codec:           "vbyte",
+		Repetition:      2,
+		ElapsedNS:       2e9,
+		CorpusBytes:     20 * bytesPerMiB,
+		Documents:       100,
+		Tokens:          200,
+		PostingsCount:   1024 * 1024,
+		FinalIndexBytes: 8 * bytesPerMiB,
+		PeakRSSBytes:    32 * bytesPerMiB,
+	}
+	want := buildResult{
+		Codec:                 "vbyte",
+		Repetition:            2,
+		ElapsedSeconds:        2,
+		DocumentsPerSecond:    50,
+		TokensPerSecond:       100,
+		PostingsPerSecond:     512 * 1024,
+		InputMiBPerSecond:     10,
+		IndexMiB:              8,
+		IndexBytesPerPosting:  8,
+		PeakResidentMemoryMiB: 32,
+	}
+	if got := summarizeBuild(observation); got != want {
+		t.Fatalf("summarizeBuild() = %+v, want %+v", got, want)
+	}
+}
+
 func TestRunQueriesWritesMeasuredRows(t *testing.T) {
 	idx, err := indexfile.Open("../../internal/indexfile/testdata/golden-v1/vbyte")
 	if err != nil {

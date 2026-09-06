@@ -37,6 +37,7 @@ type buildObservation struct {
 	UserCPUNS                int64  `json:"user_cpu_ns"`
 	SystemCPUNS              int64  `json:"system_cpu_ns"`
 	Status                   string `json:"status"`
+	CorpusBytes              uint64 `json:"corpus_bytes"`
 	Documents                uint64 `json:"documents"`
 	DocumentsWithTerms       uint64 `json:"documents_with_terms"`
 	Tokens                   uint64 `json:"tokens"`
@@ -120,6 +121,10 @@ func runBuild(
 		return fmt.Errorf("open corpus: %w", err)
 	}
 	defer input.Close()
+	corpusInfo, err := input.Stat()
+	if err != nil {
+		return fmt.Errorf("stat corpus: %w", err)
+	}
 
 	before, err := readProcessUsage()
 	if err != nil {
@@ -149,6 +154,7 @@ func runBuild(
 		UserCPUNS:                (after.userCPU - before.userCPU).Nanoseconds(),
 		SystemCPUNS:              (after.systemCPU - before.systemCPU).Nanoseconds(),
 		Status:                   "build_error",
+		CorpusBytes:              uint64(corpusInfo.Size()),
 		Documents:                report.Documents,
 		DocumentsWithTerms:       report.DocumentsWithTerms,
 		Tokens:                   report.Tokens,
