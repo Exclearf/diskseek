@@ -12,6 +12,8 @@ The goal is to implement the core indexing and search code:
 - exhaustive search and WAND
 - benchmarks comparing the different query paths
 
+See the [benchmark results](benchmarks/README.md).
+
 ## Development
 
 Requires Go 1.27 or newer.
