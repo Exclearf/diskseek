@@ -73,15 +73,18 @@ func TestRunQueriesWritesMeasuredRows(t *testing.T) {
 
 	queries := []string{"go", "missing", string([]byte{0xff})}
 	var output bytes.Buffer
-	err = runQueries(context.Background(), idx, queries, queryOptions{
+	run, err := runQueries(context.Background(), idx, queries, queryOptions{
 		repetition:   2,
 		executor:     search.ExecutorDAAT,
 		executorName: "daat",
 		limit:        3,
 		warmup:       1,
 	}, &output)
-	if err == nil {
-		t.Fatal("runQueries() error = nil with a failed query")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.QueryCount != 3 || run.Codec != "vbyte" || run.Executor != "daat" {
+		t.Fatalf("run = %+v", run)
 	}
 
 	decoder := json.NewDecoder(&output)
@@ -99,8 +102,7 @@ func TestRunQueriesWritesMeasuredRows(t *testing.T) {
 	if records[0].Repetition != 2 ||
 		records[0].Codec != "vbyte" ||
 		records[0].Executor != "daat" ||
-		records[0].Limit != 3 ||
-		records[0].Workers != 1 {
+		records[0].Limit != 3 {
 		t.Fatalf("row identity = %+v", records[0])
 	}
 	for row := range records {
@@ -128,5 +130,33 @@ func TestRunQueriesWritesMeasuredRows(t *testing.T) {
 		records[2].ResultCount != 0 ||
 		records[2].ResultDigest != "" {
 		t.Fatalf("error row = %+v", records[2])
+	}
+}
+
+func TestQueryAccumulatorSummarizesObservations(t *testing.T) {
+	observations := []queryObservation{
+		{Repetition: 2, Codec: "vbyte", Executor: "wand", Limit: 10, ElapsedNS: 40, Status: "ok", ResultCount: 10, CandidatesScored: 1},
+		{Repetition: 2, Codec: "vbyte", Executor: "wand", Limit: 10, ElapsedNS: 10, Status: "ok", ResultCount: 9, CandidatesScored: 2},
+		{Repetition: 2, Codec: "vbyte", Executor: "wand", Limit: 10, ElapsedNS: 30, Status: "search_error", CandidatesScored: 4},
+		{Repetition: 2, Codec: "vbyte", Executor: "wand", Limit: 10, ElapsedNS: 20, Status: "ok", ResultCount: 10, CandidatesScored: 8},
+	}
+
+	var accumulator queryAccumulator
+	for _, observation := range observations {
+		accumulator.add(observation)
+	}
+	got := accumulator.summarize()
+
+	if got.Repetition != 2 || got.Codec != "vbyte" || got.Executor != "wand" || got.Limit != 10 {
+		t.Fatalf("identity = %+v", got)
+	}
+	if got.QueryCount != 4 || got.Failures != 1 || got.ShortResults != 1 {
+		t.Fatalf("counts = %+v", got)
+	}
+	if got.Latency != (queryLatency{P50: 20, P95: 40, P99: 40, Max: 40}) {
+		t.Fatalf("latency = %+v", got.Latency)
+	}
+	if got.Work.CandidatesScored != 15 {
+		t.Fatalf("candidates scored = %d, want 15", got.Work.CandidatesScored)
 	}
 }

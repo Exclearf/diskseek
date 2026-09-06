@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"time"
 
 	"github.com/Exclearf/diskseek/internal/corpus"
@@ -35,6 +36,27 @@ type queryJob struct {
 	Executor    string `json:"executor"`
 	Limit       int    `json:"k"`
 	Warmup      int    `json:"warmup_queries"`
+	RunsPath    string `json:"runs_path"`
+}
+
+type queryRunObservation struct {
+	Repetition      int                `json:"repetition"`
+	Codec           string             `json:"codec"`
+	Executor        string             `json:"executor"`
+	Limit           int                `json:"k"`
+	QueryCount      int                `json:"query_count"`
+	EngineElapsedNS int64              `json:"engine_elapsed_ns"`
+	Process         queryProcessTotals `json:"process"`
+}
+
+type queryProcessTotals struct {
+	UserCPUNS      int64  `json:"user_cpu_ns"`
+	SystemCPUNS    int64  `json:"system_cpu_ns"`
+	PeakRSSBytes   uint64 `json:"peak_rss_bytes"`
+	AllocatedBytes uint64 `json:"allocated_bytes"`
+	Allocations    uint64 `json:"allocations"`
+	GCCycles       uint32 `json:"gc_cycles"`
+	GCPauseNS      uint64 `json:"gc_pause_ns"`
 }
 
 func runQueryPlan(ctx context.Context, outputDirectory string, config queryConfig) error {
@@ -48,6 +70,14 @@ func runQueryPlan(ctx context.Context, outputDirectory string, config queryConfi
 	)
 	if err != nil {
 		return fmt.Errorf("create query observations: %w", err)
+	}
+	runsPath := filepath.Join(outputDirectory, "query_runs.jsonl")
+	runs, err := os.OpenFile(runsPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
+		return errors.Join(fmt.Errorf("create query run observations: %w", err), output.Close())
+	}
+	if err := runs.Close(); err != nil {
+		return errors.Join(err, output.Close())
 	}
 
 	executable, err := os.Executable()
@@ -70,12 +100,16 @@ func runQueryPlan(ctx context.Context, outputDirectory string, config queryConfi
 			job.QueriesPath = config.QueriesPath
 			job.Repetition = repetition
 			job.Warmup = config.WarmupQueries
+			job.RunsPath = runsPath
 			if err := runQueryProcess(ctx, executable, job, output); err != nil {
 				return errors.Join(err, output.Close())
 			}
 		}
 	}
-	return output.Close()
+	if err := output.Close(); err != nil {
+		return err
+	}
+	return writeQueryResults(outputDirectory)
 }
 
 func runQueryProcess(ctx context.Context, executable string, job queryJob, output io.Writer) error {
@@ -115,13 +149,25 @@ func runQueryJob(ctx context.Context, encodedJob string, output io.Writer) error
 		return fmt.Errorf("open query index: %w", err)
 	}
 	defer idx.Close()
-	return runQueries(ctx, idx, queries, queryOptions{
+	run, err := runQueries(ctx, idx, queries, queryOptions{
 		repetition:   job.Repetition,
 		executor:     executor,
 		executorName: job.Executor,
 		limit:        job.Limit,
 		warmup:       job.Warmup,
 	}, output)
+	if err != nil {
+		return err
+	}
+	return writeQueryRun(job.RunsPath, run)
+}
+
+func writeQueryRun(path string, run queryRunObservation) error {
+	output, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0)
+	if err != nil {
+		return fmt.Errorf("open query run observations: %w", err)
+	}
+	return errors.Join(json.NewEncoder(output).Encode(run), output.Close())
 }
 
 func readQueries(path string) ([]string, error) {
@@ -150,9 +196,6 @@ func primeIndex(directory string) error {
 		return err
 	}
 	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
 		if err := primeFile(filepath.Join(directory, entry.Name())); err != nil {
 			return err
 		}
@@ -184,7 +227,6 @@ type queryObservation struct {
 	Codec                 string `json:"codec"`
 	Executor              string `json:"executor"`
 	Limit                 int    `json:"k"`
-	Workers               int    `json:"workers"`
 	QueryOrdinal          int    `json:"query_ordinal"`
 	ElapsedNS             int64  `json:"elapsed_ns"`
 	Status                string `json:"status"`
@@ -210,31 +252,37 @@ func runQueries(
 	queries []string,
 	options queryOptions,
 	output io.Writer,
-) error {
+) (queryRunObservation, error) {
 	for ordinal := 0; ordinal < min(options.warmup, len(queries)); ordinal++ {
 		if _, _, err := search.SearchWithStats(ctx, idx, queries[ordinal], options.limit, options.executor); err != nil {
-			return fmt.Errorf("warm up query %d: %w", ordinal+1, err)
+			return queryRunObservation{}, fmt.Errorf("warm up query %d: %w", ordinal+1, err)
 		}
 	}
 
 	codec, err := codecName(idx.PostingsCodec())
 	if err != nil {
-		return err
+		return queryRunObservation{}, err
 	}
 	writer := json.NewEncoder(output)
+	var beforeMemory runtime.MemStats
+	runtime.ReadMemStats(&beforeMemory)
+	beforeUsage, err := readProcessUsage()
+	if err != nil {
+		return queryRunObservation{}, err
+	}
 
-	failedQueries := 0
+	var engineElapsed time.Duration
 	for ordinal, query := range queries {
 		started := time.Now()
 		results, stats, err := search.SearchWithStats(ctx, idx, query, options.limit, options.executor)
 		elapsed := time.Since(started)
+		engineElapsed += elapsed
 
 		observation := queryObservation{
 			Repetition:            options.repetition,
 			Codec:                 codec,
 			Executor:              options.executorName,
 			Limit:                 options.limit,
-			Workers:               1,
 			QueryOrdinal:          ordinal + 1,
 			ElapsedNS:             elapsed.Nanoseconds(),
 			Status:                queryStatus(err),
@@ -254,21 +302,38 @@ func runQueries(
 		}
 		if err == nil {
 			observation.ResultDigest = digestResults(results)
-		} else {
-			failedQueries++
 		}
 		if err := writer.Encode(observation); err != nil {
-			return fmt.Errorf("write query %d: %w", ordinal+1, err)
+			return queryRunObservation{}, fmt.Errorf("write query %d: %w", ordinal+1, err)
 		}
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return err
+			return queryRunObservation{}, err
 		}
 	}
 
-	if failedQueries != 0 {
-		return fmt.Errorf("%d measured queries failed", failedQueries)
+	afterUsage, err := readProcessUsage()
+	if err != nil {
+		return queryRunObservation{}, err
 	}
-	return nil
+	var afterMemory runtime.MemStats
+	runtime.ReadMemStats(&afterMemory)
+	return queryRunObservation{
+		Repetition:      options.repetition,
+		Codec:           codec,
+		Executor:        options.executorName,
+		Limit:           options.limit,
+		QueryCount:      len(queries),
+		EngineElapsedNS: engineElapsed.Nanoseconds(),
+		Process: queryProcessTotals{
+			UserCPUNS:      (afterUsage.userCPU - beforeUsage.userCPU).Nanoseconds(),
+			SystemCPUNS:    (afterUsage.systemCPU - beforeUsage.systemCPU).Nanoseconds(),
+			PeakRSSBytes:   afterUsage.peakRSS,
+			AllocatedBytes: afterMemory.TotalAlloc - beforeMemory.TotalAlloc,
+			Allocations:    afterMemory.Mallocs - beforeMemory.Mallocs,
+			GCCycles:       afterMemory.NumGC - beforeMemory.NumGC,
+			GCPauseNS:      afterMemory.PauseTotalNs - beforeMemory.PauseTotalNs,
+		},
+	}, nil
 }
 
 func digestResults(results []search.MeasuredResult) string {
