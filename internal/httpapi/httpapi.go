@@ -21,15 +21,20 @@ type searchRequest struct {
 }
 
 type searchResult struct {
-	ExternalID string  `json:"external_id"`
-	Score      float64 `json:"score"`
+	Document
+	Score float64 `json:"score"`
 }
 
 type searchResponse struct {
 	Results []searchResult `json:"results"`
 }
 
-func New(datasets map[string]*indexfile.Index) http.Handler {
+type Dataset struct {
+	Index   *indexfile.Index
+	Catalog map[string]Document
+}
+
+func New(datasets map[string]Dataset) http.Handler {
 	router := chi.NewRouter()
 	router.Post("/v1/search", func(response http.ResponseWriter, request *http.Request) {
 		var input searchRequest
@@ -39,13 +44,13 @@ func New(datasets map[string]*indexfile.Index) http.Handler {
 			return
 		}
 
-		idx := datasets[input.Dataset]
-		if idx == nil {
+		dataset, exists := datasets[input.Dataset]
+		if !exists || dataset.Index == nil {
 			http.Error(response, "unknown dataset", http.StatusBadRequest)
 			return
 		}
 
-		results, err := search.Search(request.Context(), idx, input.Query, resultLimit)
+		results, err := search.Search(request.Context(), dataset.Index, input.Query, resultLimit)
 		if err != nil {
 			http.Error(response, "search failed", http.StatusInternalServerError)
 			return
@@ -53,9 +58,14 @@ func New(datasets map[string]*indexfile.Index) http.Handler {
 
 		output := make([]searchResult, len(results))
 		for position, result := range results {
+			document, found := dataset.Catalog[result.ExternalID]
+			if !found {
+				http.Error(response, "search failed", http.StatusInternalServerError)
+				return
+			}
 			output[position] = searchResult{
-				ExternalID: result.ExternalID,
-				Score:      result.Score,
+				Document: document,
+				Score:    result.Score,
 			}
 		}
 
