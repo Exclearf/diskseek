@@ -1,6 +1,7 @@
 package indexfile
 
 import (
+	"context"
 	"errors"
 	"math"
 	"testing"
@@ -138,6 +139,30 @@ func TestCursorAdvanceReadFailureInvalidatesCursor(t *testing.T) {
 				t.Fatal("Current() valid = true after read failure")
 			}
 		})
+	}
+}
+
+func TestCursorAdvanceContextStopsBeforePayload(t *testing.T) {
+	cursor := newRawCursorForTest(t, cursorTestPostings(postingsPerBlock+1))
+	input := cursor.input
+	ctx, cancel := context.WithCancel(context.Background())
+	reads := 0
+	cursor.input = readerAtFunc(func(data []byte, offset int64) (int, error) {
+		reads++
+		read, err := input.ReadAt(data, offset)
+		cancel()
+		return read, err
+	})
+
+	valid, err := cursor.AdvanceContext(ctx, postingsPerBlock)
+	if valid || !errors.Is(err, context.Canceled) {
+		t.Fatalf("AdvanceContext() = (%t, %v), want (false, %v)", valid, err, context.Canceled)
+	}
+	if reads != 1 {
+		t.Fatalf("reads = %d, want one block-header read", reads)
+	}
+	if _, valid := cursor.Current(); valid {
+		t.Fatal("Current() valid = true after cancellation")
 	}
 }
 

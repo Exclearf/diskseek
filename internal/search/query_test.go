@@ -1,6 +1,7 @@
 package search
 
 import (
+	"context"
 	"math"
 	"math/rand"
 	"path/filepath"
@@ -33,7 +34,7 @@ func TestBuildDiskQueryPlanUsesPreparedTerms(t *testing.T) {
 		}
 	})
 
-	plan, err := buildDiskQueryPlan(idx, "SEARCH missing GO go")
+	plan, err := buildDiskQueryPlan(context.Background(), idx, "SEARCH missing GO go")
 	if err != nil {
 		t.Fatal(err)
 	}

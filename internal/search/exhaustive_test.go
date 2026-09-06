@@ -2,6 +2,7 @@ package search
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"math"
@@ -17,7 +18,7 @@ import (
 func TestExhaustiveDAATTraversesPostingUnion(t *testing.T) {
 	idx := openDiskTestIndex(t, filepath.Join("..", "indexfile", "testdata", "golden-v1", "vbyte"))
 
-	got, stats, err := searchDAAT(idx, "search go", 10)
+	got, stats, err := searchDAAT(context.Background(), idx, "search go", 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +64,7 @@ func TestExhaustiveDAATEmptyResults(t *testing.T) {
 		{name: "unknown term", query: "missing", k: 10},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			results, _, err := searchDAAT(idx, test.query, test.k)
+			results, _, err := searchDAAT(context.Background(), idx, test.query, test.k)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -76,7 +77,7 @@ func TestExhaustiveDAATEmptyResults(t *testing.T) {
 
 func TestSearchDAATValidatesQueryWithZeroK(t *testing.T) {
 	idx := openDiskTestIndex(t, filepath.Join("..", "indexfile", "testdata", "golden-v1", "vbyte"))
-	results, stats, err := searchDAAT(idx, string([]byte{0xff}), 0)
+	results, stats, err := searchDAAT(context.Background(), idx, string([]byte{0xff}), 0)
 	if !errors.Is(err, analyzer.ErrInvalidUTF8) || results != nil || stats != (daatStats{}) {
 		t.Fatalf("searchDAAT() = (%v, %+v, %v), want (nil, zero stats, %v)", results, stats, err, analyzer.ErrInvalidUTF8)
 	}
@@ -90,7 +91,7 @@ func TestExhaustiveDAATDiscardsPartialResults(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		results, _, err := searchDAAT(idx, "go", 10)
+		results, _, err := searchDAAT(context.Background(), idx, "go", 10)
 		if err == nil || results != nil {
 			t.Fatalf("searchDAAT() = (%v, %v), want (nil, error)", results, err)
 		}
@@ -99,7 +100,7 @@ func TestExhaustiveDAATDiscardsPartialResults(t *testing.T) {
 	t.Run("advance to later block", func(t *testing.T) {
 		directory := writeLongDiskTestIndex(t)
 		idx := openDiskTestIndex(t, directory)
-		plan, err := buildDiskQueryPlan(idx, "term")
+		plan, err := buildDiskQueryPlan(context.Background(), idx, "term")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -107,7 +108,7 @@ func TestExhaustiveDAATDiscardsPartialResults(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		results, _, err := executeDAAT(idx, plan, 10)
+		results, _, err := executeDAAT(context.Background(), idx, plan, 10)
 		if err == nil || results != nil {
 			t.Fatalf("executeDAAT() = (%v, %v), want (nil, error)", results, err)
 		}
@@ -120,7 +121,7 @@ func TestExhaustiveDAATDiscardsPartialResults(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		results, _, err := searchDAAT(idx, "go", 10)
+		results, _, err := searchDAAT(context.Background(), idx, "go", 10)
 		if err == nil || results != nil {
 			t.Fatalf("searchDAAT() = (%v, %v), want (nil, error)", results, err)
 		}

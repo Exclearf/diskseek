@@ -3,6 +3,7 @@ package search
 import (
 	"cmp"
 	"container/heap"
+	"context"
 	"fmt"
 	"slices"
 
@@ -68,11 +69,17 @@ func (t *topK) finish() []result {
 	return results
 }
 
-func resolveExternalIDs(idx *indexfile.Index, results []result) error {
+func resolveExternalIDs(ctx context.Context, idx *indexfile.Index, results []result) error {
 	for position := range results {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		externalID, err := idx.ExternalID(results[position].DocumentID)
 		if err != nil {
 			return fmt.Errorf("resolve document %d: %w", results[position].DocumentID, err)
+		}
+		if err := ctx.Err(); err != nil {
+			return err
 		}
 		results[position].ExternalID = externalID
 	}

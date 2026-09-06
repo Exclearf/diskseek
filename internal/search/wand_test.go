@@ -99,12 +99,12 @@ func TestExecuteWAND(t *testing.T) {
 	t.Run("equal bound terminates", func(t *testing.T) {
 		const input = "d0\tterm\nd1\tterm\nd2\tterm\n"
 		disk, logical := buildWANDTestIndex(t, input)
-		plan, err := buildDiskQueryPlan(disk, "term")
+		plan, err := buildDiskQueryPlan(context.Background(), disk, "term")
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		got, stats, err := executeWAND(disk, plan, 1)
+		got, stats, err := executeWAND(context.Background(), disk, plan, 1)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -135,12 +135,12 @@ func TestExecuteWAND(t *testing.T) {
 			"d3\tcommon pivot\n" +
 			"d4\tcommon\n"
 		disk, logical := buildWANDTestIndex(t, input)
-		plan, err := buildDiskQueryPlan(disk, "seed common rare pivot")
+		plan, err := buildDiskQueryPlan(context.Background(), disk, "seed common rare pivot")
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		got, stats, err := executeWAND(disk, plan, 1)
+		got, stats, err := executeWAND(context.Background(), disk, plan, 1)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -169,7 +169,7 @@ func TestExecuteWAND(t *testing.T) {
 			"d1\tterm\n"
 		disk, _ := buildWANDTestIndex(t, input)
 
-		_, stats, err := searchWAND(disk, "term", 1)
+		_, stats, err := searchWAND(context.Background(), disk, "term", 1)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -189,11 +189,11 @@ func TestWANDCandidatePruning(t *testing.T) {
 			"d5\tcommon\n"
 		disk, _ := buildWANDTestIndex(t, input)
 
-		exhaustive, exhaustiveStats, err := searchDAAT(disk, "rare common", 1)
+		exhaustive, exhaustiveStats, err := searchDAAT(context.Background(), disk, "rare common", 1)
 		if err != nil {
 			t.Fatal(err)
 		}
-		wand, wandStats, err := searchWAND(disk, "rare common", 1)
+		wand, wandStats, err := searchWAND(context.Background(), disk, "rare common", 1)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -212,11 +212,11 @@ func TestWANDCandidatePruning(t *testing.T) {
 			"d2\tterm filler\n"
 		disk, _ := buildWANDTestIndex(t, input)
 
-		exhaustive, exhaustiveStats, err := searchDAAT(disk, "term", 1)
+		exhaustive, exhaustiveStats, err := searchDAAT(context.Background(), disk, "term", 1)
 		if err != nil {
 			t.Fatal(err)
 		}
-		wand, wandStats, err := searchWAND(disk, "term", 1)
+		wand, wandStats, err := searchWAND(context.Background(), disk, "term", 1)
 		if err != nil {
 			t.Fatal(err)
 		}

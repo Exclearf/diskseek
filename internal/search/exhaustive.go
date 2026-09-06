@@ -1,6 +1,7 @@
 package search
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/Exclearf/diskseek/internal/index"
@@ -15,25 +16,34 @@ type daatStats struct {
 	BytesRequested   uint64
 }
 
-func searchDAAT(idx *indexfile.Index, query string, k int) ([]result, daatStats, error) {
+func searchDAAT(ctx context.Context, idx *indexfile.Index, query string, k int) ([]result, daatStats, error) {
 	if k <= 0 {
+		if err := ctx.Err(); err != nil {
+			return nil, daatStats{}, err
+		}
 		if _, err := prepareQuery(query); err != nil {
+			return nil, daatStats{}, err
+		}
+		if err := ctx.Err(); err != nil {
 			return nil, daatStats{}, err
 		}
 		return nil, daatStats{}, nil
 	}
 
-	plan, err := buildDiskQueryPlan(idx, query)
+	plan, err := buildDiskQueryPlan(ctx, idx, query)
 	if err != nil {
 		return nil, daatStats{}, err
 	}
-	return executeDAAT(idx, plan, k)
+	return executeDAAT(ctx, idx, plan, k)
 }
 
-func executeDAAT(idx *indexfile.Index, plan diskQueryPlan, k int) ([]result, daatStats, error) {
+func executeDAAT(ctx context.Context, idx *indexfile.Index, plan diskQueryPlan, k int) ([]result, daatStats, error) {
 	collector := newTopK(k)
 	var candidatesScored uint64
 	for {
+		if err := ctx.Err(); err != nil {
+			return nil, daatStats{}, err
+		}
 		documentID, found := nextCandidate(plan.terms)
 		if !found {
 			break
@@ -42,6 +52,9 @@ func executeDAAT(idx *indexfile.Index, plan diskQueryPlan, k int) ([]result, daa
 		documentLength := idx.DocumentLength(documentID)
 		var score float64
 		for termIndex := range plan.terms {
+			if err := ctx.Err(); err != nil {
+				return nil, daatStats{}, err
+			}
 			term := &plan.terms[termIndex]
 			posting, current := term.cursor.Current()
 			if !current || posting.DocumentID != documentID {
@@ -53,7 +66,7 @@ func executeDAAT(idx *indexfile.Index, plan diskQueryPlan, k int) ([]result, daa
 				documentLength,
 				plan.averageDocumentLength,
 			)
-			if _, err := term.cursor.Next(); err != nil {
+			if _, err := term.cursor.NextContext(ctx); err != nil {
 				return nil, daatStats{}, fmt.Errorf("advance %q postings: %w", term.term, err)
 			}
 		}
@@ -61,8 +74,11 @@ func executeDAAT(idx *indexfile.Index, plan diskQueryPlan, k int) ([]result, daa
 		candidatesScored++
 	}
 
+	if err := ctx.Err(); err != nil {
+		return nil, daatStats{}, err
+	}
 	results := collector.finish()
-	if err := resolveExternalIDs(idx, results); err != nil {
+	if err := resolveExternalIDs(ctx, idx, results); err != nil {
 		return nil, daatStats{}, err
 	}
 

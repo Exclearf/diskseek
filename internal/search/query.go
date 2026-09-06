@@ -1,6 +1,7 @@
 package search
 
 import (
+	"context"
 	"fmt"
 	"slices"
 
@@ -30,9 +31,15 @@ func prepareQuery(query string) ([]string, error) {
 	return slices.Compact(terms), nil
 }
 
-func buildDiskQueryPlan(idx *indexfile.Index, query string) (diskQueryPlan, error) {
+func buildDiskQueryPlan(ctx context.Context, idx *indexfile.Index, query string) (diskQueryPlan, error) {
+	if err := ctx.Err(); err != nil {
+		return diskQueryPlan{}, err
+	}
 	terms, err := prepareQuery(query)
 	if err != nil {
+		return diskQueryPlan{}, err
+	}
+	if err := ctx.Err(); err != nil {
 		return diskQueryPlan{}, err
 	}
 
@@ -41,6 +48,9 @@ func buildDiskQueryPlan(idx *indexfile.Index, query string) (diskQueryPlan, erro
 		cursor, found, err := idx.Postings(term)
 		if err != nil {
 			return diskQueryPlan{}, fmt.Errorf("open %q postings: %w", term, err)
+		}
+		if err := ctx.Err(); err != nil {
+			return diskQueryPlan{}, err
 		}
 		if !found {
 			continue

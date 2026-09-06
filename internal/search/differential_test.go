@@ -3,6 +3,7 @@ package search
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"math/rand/v2"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/Exclearf/diskseek/internal/corpus"
@@ -119,7 +121,7 @@ func TestSearchModelMetamorphicQueries(t *testing.T) {
 		}()
 		checkDiskLogicalIndex(t, idx, &logical)
 
-		results, _, err := searchWAND(idx, "common rare tie", 5)
+		results, _, err := searchWAND(context.Background(), idx, "common rare tie", 5)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -130,6 +132,148 @@ func TestSearchModelMetamorphicQueries(t *testing.T) {
 	if !equalResultBits(beforeClose, afterReopen) {
 		t.Fatal("close and reopen changed query results")
 	}
+}
+
+func TestConcurrentDiskSearches(t *testing.T) {
+	model := generateSearchModel(fixedSearchModelConfig(13))
+	destination := buildDifferentialIndex(t, model.input, indexfile.PostingsCodecVByte, 1)
+	disk := openDiskTestIndex(t, destination)
+	queries := model.queries[:6]
+	expected := make([][]result, len(queries))
+	for position, query := range queries {
+		results, _, err := searchDAAT(context.Background(), disk, query.query, query.k)
+		if err != nil {
+			t.Fatal(err)
+		}
+		expected[position] = results
+	}
+
+	start := make(chan struct{})
+	var searches sync.WaitGroup
+	for worker := range 32 {
+		queryIndex := worker % len(queries)
+		query := queries[queryIndex]
+		searches.Go(func() {
+			<-start
+			var got []result
+			var err error
+			if worker%2 == 0 {
+				got, _, err = searchDAAT(context.Background(), disk, query.query, query.k)
+			} else {
+				got, _, err = searchWAND(context.Background(), disk, query.query, query.k)
+			}
+			if err != nil {
+				t.Errorf("search %q: %v", query.query, err)
+				return
+			}
+			if !equalResultBits(got, expected[queryIndex]) {
+				t.Errorf("search %q = %+v, want %+v", query.query, got, expected[queryIndex])
+				return
+			}
+			for position := range got {
+				if got[position].ExternalID != expected[queryIndex][position].ExternalID {
+					t.Errorf(
+						"search %q result %d external ID = %q, want %q",
+						query.query,
+						position,
+						got[position].ExternalID,
+						expected[queryIndex][position].ExternalID,
+					)
+					return
+				}
+			}
+		})
+	}
+	close(start)
+	searches.Wait()
+}
+
+func TestDiskSearchCancellation(t *testing.T) {
+	disk := openDiskTestIndex(t, filepath.Join("..", "indexfile", "testdata", "golden-v1", "vbyte"))
+
+	t.Run("before query planning", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		results, _, err := searchDAAT(ctx, disk, "go", 10)
+		checkCanceledSearch(t, results, err)
+		results, _, err = searchWAND(ctx, disk, "go", 10)
+		checkCanceledSearch(t, results, err)
+	})
+
+	for _, phase := range []struct {
+		name      string
+		cancelOn  int
+		exhausted bool
+	}{
+		{name: "during scoring", cancelOn: 2},
+		{name: "during result collection", cancelOn: 10, exhausted: true},
+	} {
+		t.Run(phase.name, func(t *testing.T) {
+			for _, test := range []struct {
+				name string
+				run  func(context.Context, diskQueryPlan) ([]result, error)
+			}{
+				{
+					name: "DAAT",
+					run: func(ctx context.Context, plan diskQueryPlan) ([]result, error) {
+						results, _, err := executeDAAT(ctx, disk, plan, 10)
+						return results, err
+					},
+				},
+				{
+					name: "WAND",
+					run: func(ctx context.Context, plan diskQueryPlan) ([]result, error) {
+						results, _, err := executeWAND(ctx, disk, plan, 10)
+						return results, err
+					},
+				},
+			} {
+				t.Run(test.name, func(t *testing.T) {
+					plan, err := buildDiskQueryPlan(context.Background(), disk, "go")
+					if err != nil {
+						t.Fatal(err)
+					}
+					ctx := newCancelOnCheckContext(phase.cancelOn)
+					results, err := test.run(ctx, plan)
+					checkCanceledSearch(t, results, err)
+					_, current := plan.terms[0].cursor.Current()
+					if current != !phase.exhausted {
+						t.Fatalf("cursor current = %t, want %t", current, !phase.exhausted)
+					}
+				})
+			}
+		})
+	}
+}
+
+func checkCanceledSearch(t *testing.T, results []result, err error) {
+	t.Helper()
+	if !errors.Is(err, context.Canceled) || results != nil {
+		t.Fatalf("search = (%v, %v), want (nil, %v)", results, err, context.Canceled)
+	}
+}
+
+type cancelOnCheckContext struct {
+	context.Context
+	cancel    context.CancelFunc
+	remaining int
+}
+
+func newCancelOnCheckContext(check int) *cancelOnCheckContext {
+	ctx, cancel := context.WithCancel(context.Background())
+	return &cancelOnCheckContext{Context: ctx, cancel: cancel, remaining: check}
+}
+
+func (c *cancelOnCheckContext) Err() error {
+	if err := c.Context.Err(); err != nil {
+		return err
+	}
+	c.remaining--
+	if c.remaining == 0 {
+		c.cancel()
+	}
+	return c.Context.Err()
 }
 
 func checkDiskExecutorParity(t *testing.T, input []byte, queries []differentialQuery) {
@@ -165,7 +309,7 @@ func checkDiskExecutorParity(t *testing.T, input []byte, queries []differentialQ
 						if err != nil {
 							t.Fatal(err)
 						}
-						exhaustive, exhaustiveStats, err := searchDAAT(disk, query.query, query.k)
+						exhaustive, exhaustiveStats, err := searchDAAT(context.Background(), disk, query.query, query.k)
 						if err != nil {
 							t.Fatal(err)
 						}
@@ -173,7 +317,7 @@ func checkDiskExecutorParity(t *testing.T, input []byte, queries []differentialQ
 							t.Fatalf("searchDAAT(%q, %d) = %+v, want %+v", query.query, query.k, exhaustive, want)
 						}
 
-						wand, wandStats, err := searchWAND(disk, query.query, query.k)
+						wand, wandStats, err := searchWAND(context.Background(), disk, query.query, query.k)
 						if err != nil {
 							t.Fatal(err)
 						}

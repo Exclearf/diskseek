@@ -2,6 +2,7 @@ package search
 
 import (
 	"cmp"
+	"context"
 	"fmt"
 	"slices"
 
@@ -53,25 +54,34 @@ func selectWANDPivot(plan *diskQueryPlan, cursors []wandCursor, threshold float6
 	return wandPivot{}, false
 }
 
-func searchWAND(idx *indexfile.Index, query string, k int) ([]result, wandStats, error) {
+func searchWAND(ctx context.Context, idx *indexfile.Index, query string, k int) ([]result, wandStats, error) {
 	if k <= 0 {
+		if err := ctx.Err(); err != nil {
+			return nil, wandStats{}, err
+		}
 		if _, err := prepareQuery(query); err != nil {
+			return nil, wandStats{}, err
+		}
+		if err := ctx.Err(); err != nil {
 			return nil, wandStats{}, err
 		}
 		return nil, wandStats{}, nil
 	}
 
-	plan, err := buildDiskQueryPlan(idx, query)
+	plan, err := buildDiskQueryPlan(ctx, idx, query)
 	if err != nil {
 		return nil, wandStats{}, err
 	}
-	return executeWAND(idx, plan, k)
+	return executeWAND(ctx, idx, plan, k)
 }
 
-func executeWAND(idx *indexfile.Index, plan diskQueryPlan, k int) ([]result, wandStats, error) {
+func executeWAND(ctx context.Context, idx *indexfile.Index, plan diskQueryPlan, k int) ([]result, wandStats, error) {
 	collector := newTopK(k)
 	var stats wandStats
 	for {
+		if err := ctx.Err(); err != nil {
+			return nil, wandStats{}, err
+		}
 		cursors := currentWANDCursors(plan.terms)
 		if len(cursors) == 0 {
 			break
@@ -100,7 +110,7 @@ func executeWAND(idx *indexfile.Index, plan diskQueryPlan, k int) ([]result, wan
 				}
 
 				term := &plan.terms[cursorToAdvance.termIndex]
-				if _, err := term.cursor.Advance(pivot.documentID); err != nil {
+				if _, err := term.cursor.AdvanceContext(ctx, pivot.documentID); err != nil {
 					return nil, wandStats{}, fmt.Errorf("advance %q postings to document %d: %w", term.term, pivot.documentID, err)
 				}
 				continue
@@ -110,6 +120,9 @@ func executeWAND(idx *indexfile.Index, plan diskQueryPlan, k int) ([]result, wan
 		documentLength := idx.DocumentLength(documentID)
 		var score float64
 		for termIndex := range plan.terms {
+			if err := ctx.Err(); err != nil {
+				return nil, wandStats{}, err
+			}
 			term := &plan.terms[termIndex]
 			posting, current := term.cursor.Current()
 			if !current || posting.DocumentID != documentID {
@@ -121,7 +134,7 @@ func executeWAND(idx *indexfile.Index, plan diskQueryPlan, k int) ([]result, wan
 				documentLength,
 				plan.averageDocumentLength,
 			)
-			if _, err := term.cursor.Next(); err != nil {
+			if _, err := term.cursor.NextContext(ctx); err != nil {
 				return nil, wandStats{}, fmt.Errorf("advance %q postings: %w", term.term, err)
 			}
 		}
@@ -134,8 +147,11 @@ func executeWAND(idx *indexfile.Index, plan diskQueryPlan, k int) ([]result, wan
 		}
 	}
 
+	if err := ctx.Err(); err != nil {
+		return nil, wandStats{}, err
+	}
 	results := collector.finish()
-	if err := resolveExternalIDs(idx, results); err != nil {
+	if err := resolveExternalIDs(ctx, idx, results); err != nil {
 		return nil, wandStats{}, err
 	}
 	for _, term := range plan.terms {

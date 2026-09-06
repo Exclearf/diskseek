@@ -1,6 +1,7 @@
 package indexfile
 
 import (
+	"context"
 	"errors"
 	"io"
 
@@ -71,7 +72,14 @@ func (c *Cursor) Stats() CursorStats {
 }
 
 func (c *Cursor) Next() (bool, error) {
+	return c.NextContext(context.Background())
+}
+
+func (c *Cursor) NextContext(ctx context.Context) (bool, error) {
 	c.stats.NextCalls++
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
 	if c.blockPosition >= c.blockPostingCount {
 		return false, nil
 	}
@@ -85,19 +93,29 @@ func (c *Cursor) Next() (bool, error) {
 	}
 	previousDocumentID := c.postings[c.blockPosition-1].DocumentID
 	if err := c.loadBlock(); err != nil {
-		c.postingsRemaining = 0
+		c.invalidate()
+		return false, err
+	}
+	if err := ctx.Err(); err != nil {
+		c.invalidate()
 		return false, err
 	}
 	if c.postings[0].DocumentID <= previousDocumentID {
-		c.blockPosition = c.blockPostingCount
-		c.postingsRemaining = 0
+		c.invalidate()
 		return false, errors.New("posting document IDs are not strictly increasing across blocks")
 	}
 	return true, nil
 }
 
 func (c *Cursor) Advance(target index.DocumentID) (bool, error) {
+	return c.AdvanceContext(context.Background(), target)
+}
+
+func (c *Cursor) AdvanceContext(ctx context.Context, target index.DocumentID) (bool, error) {
 	c.stats.AdvanceCalls++
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
 	current, valid := c.Current()
 	if !valid {
 		return false, nil
@@ -116,9 +134,17 @@ func (c *Cursor) Advance(target index.DocumentID) (bool, error) {
 
 	c.blockPosition = c.blockPostingCount
 	for c.postingsRemaining != 0 {
+		if err := ctx.Err(); err != nil {
+			c.invalidate()
+			return false, err
+		}
 		header, postingCount, err := c.readBlockHeader()
 		if err != nil {
-			c.postingsRemaining = 0
+			c.invalidate()
+			return false, err
+		}
+		if err := ctx.Err(); err != nil {
+			c.invalidate()
 			return false, err
 		}
 
@@ -132,11 +158,15 @@ func (c *Cursor) Advance(target index.DocumentID) (bool, error) {
 		}
 
 		if err := c.readBlockPayload(header, postingCount); err != nil {
-			c.postingsRemaining = 0
+			c.invalidate()
+			return false, err
+		}
+		if err := ctx.Err(); err != nil {
+			c.invalidate()
 			return false, err
 		}
 		if c.postings[0].DocumentID <= lastDocumentID {
-			c.postingsRemaining = 0
+			c.invalidate()
 			return false, errors.New("posting document IDs are not strictly increasing across blocks")
 		}
 		if err := c.consumeBlock(header, postingCount); err != nil {
@@ -150,7 +180,16 @@ func (c *Cursor) Advance(target index.DocumentID) (bool, error) {
 		}
 		return true, nil
 	}
+	if err := ctx.Err(); err != nil {
+		c.invalidate()
+		return false, err
+	}
 	return false, nil
+}
+
+func (c *Cursor) invalidate() {
+	c.blockPosition = c.blockPostingCount
+	c.postingsRemaining = 0
 }
 
 func (c *Cursor) loadBlock() error {
