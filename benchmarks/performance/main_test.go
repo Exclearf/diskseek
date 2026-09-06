@@ -3,9 +3,9 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/csv"
+	"encoding/json"
+	"io"
 	"math"
-	"strconv"
 	"testing"
 
 	"github.com/Exclearf/diskseek/internal/indexfile"
@@ -56,59 +56,50 @@ func TestRunQueriesWritesMeasuredRows(t *testing.T) {
 		t.Fatal("runQueries() error = nil with a failed query")
 	}
 
-	reader := csv.NewReader(bytes.NewReader(output.Bytes()))
-	reader.Comma = '\t'
-	reader.FieldsPerRecord = len(queryHeader)
-	records, err := reader.ReadAll()
-	if err != nil {
-		t.Fatal(err)
+	decoder := json.NewDecoder(&output)
+	records := make([]queryObservation, 3)
+	for row := range records {
+		if err := decoder.Decode(&records[row]); err != nil {
+			t.Fatalf("decode row %d: %v", row+1, err)
+		}
 	}
-	if len(records) != 4 {
-		t.Fatalf("TSV rows = %d, want one header and three measured queries", len(records))
+	var extra queryObservation
+	if err := decoder.Decode(&extra); err != io.EOF {
+		t.Fatalf("decode after final row: %v", err)
 	}
 
-	column := func(name string) int {
-		t.Helper()
-		for position, candidate := range queryHeader {
-			if candidate == name {
-				return position
-			}
-		}
-		t.Fatalf("missing column %q", name)
-		return 0
+	if records[0].RunID != "test-run" ||
+		records[0].Repetition != 2 ||
+		records[0].Codec != "vbyte" ||
+		records[0].Executor != "daat" ||
+		records[0].Limit != 3 ||
+		records[0].Workers != 1 {
+		t.Fatalf("row identity = %+v", records[0])
 	}
-	if records[1][column("run_id")] != "test-run" ||
-		records[1][column("repetition")] != "2" ||
-		records[1][column("codec")] != "vbyte" ||
-		records[1][column("executor")] != "daat" ||
-		records[1][column("k")] != "3" ||
-		records[1][column("workers")] != "1" {
-		t.Fatalf("row identity = %v", records[1][:7])
-	}
-	for row := 1; row < len(records); row++ {
-		if records[row][column("query_ordinal")] != strconv.Itoa(row) {
-			t.Fatalf("row %d ordinal = %q", row, records[row][column("query_ordinal")])
+	for row := range records {
+		if records[row].QueryOrdinal != row+1 {
+			t.Fatalf("row %d ordinal = %d", row+1, records[row].QueryOrdinal)
 		}
 	}
 
-	if records[1][column("status")] != "ok" ||
-		records[1][column("result_count")] != "2" ||
-		records[1][column("result_digest")] == "" ||
-		records[1][column("matched_terms")] != "1" ||
-		records[1][column("candidates_scored")] != "2" {
-		t.Fatalf("short-result row = %v", records[1])
+	if records[0].Status != "ok" ||
+		records[0].ResultCount != 2 ||
+		records[0].ResultDigest == "" ||
+		records[0].MatchedTerms != 1 ||
+		records[0].CandidatesScored != 2 {
+		t.Fatalf("short-result row = %+v", records[0])
 	}
-	if records[2][column("status")] != "ok" ||
-		records[2][column("result_count")] != "0" ||
-		records[2][column("result_digest")] == "" ||
-		records[2][column("matched_terms")] != "0" ||
-		records[2][column("candidates_scored")] != "0" ||
-		records[2][column("postings_decoded")] != "0" {
-		t.Fatalf("zero-result row = %v", records[2])
+	if records[1].Status != "ok" ||
+		records[1].ResultCount != 0 ||
+		records[1].ResultDigest == "" ||
+		records[1].MatchedTerms != 0 ||
+		records[1].CandidatesScored != 0 ||
+		records[1].PostingsDecoded != 0 {
+		t.Fatalf("zero-result row = %+v", records[1])
 	}
-	if records[3][column("status")] != "search_error" ||
-		records[3][column("result_count")] != "0" ||
-		records[3][column("result_digest")] != "" {
-		t.Fatalf("error row = %v", records[3])
+	if records[2].Status != "search_error" ||
+		records[2].ResultCount != 0 ||
+		records[2].ResultDigest != "" {
+		t.Fatalf("error row = %+v", records[2])
 	}
 }
