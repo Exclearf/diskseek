@@ -14,13 +14,15 @@ import (
 )
 
 const buildJobEnvironment = "DISKSEEK_BENCHMARK_BUILD_JOB"
+const queryJobEnvironment = "DISKSEEK_BENCHMARK_QUERY_JOB"
 
 type benchmarkConfig struct {
-	CorpusPath         string      `json:"corpus"`
-	OutputDirectory    string      `json:"output_directory"`
-	IndexDirectory     string      `json:"index_directory"`
-	TemporaryDirectory string      `json:"temporary_directory"`
-	Build              buildConfig `json:"build"`
+	CorpusPath         string       `json:"corpus"`
+	OutputDirectory    string       `json:"output_directory"`
+	IndexDirectory     string       `json:"index_directory"`
+	TemporaryDirectory string       `json:"temporary_directory"`
+	Build              buildConfig  `json:"build"`
+	Query              *queryConfig `json:"query"`
 }
 
 type buildConfig struct {
@@ -56,6 +58,9 @@ func run(ctx context.Context, arguments []string) error {
 	if encodedJob, worker := os.LookupEnv(buildJobEnvironment); worker {
 		return runBuildJob(ctx, encodedJob, os.Stdout)
 	}
+	if encodedJob, worker := os.LookupEnv(queryJobEnvironment); worker {
+		return runQueryJob(ctx, encodedJob, os.Stdout)
+	}
 	if len(arguments) != 2 {
 		return errors.New("usage: diskseek-benchmark CONFIG")
 	}
@@ -63,6 +68,9 @@ func run(ctx context.Context, arguments []string) error {
 	config, err := readConfig(arguments[1])
 	if err != nil {
 		return err
+	}
+	if config.Query != nil {
+		return runQueryPlan(ctx, config.OutputDirectory, *config.Query)
 	}
 	return runBuildPlan(ctx, config)
 }

@@ -1,0 +1,10 @@
+{
+  "output_directory": "/path/to/results",
+  "query": {
+    "queries": "/path/to/queries.tsv",
+    "raw_index": "/path/to/raw-index",
+    "vbyte_index": "/path/to/vbyte-index",
+    "repetitions": 3,
+    "warmup_queries": 500
+  }
+}
