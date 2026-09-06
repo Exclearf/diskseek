@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"math"
 	"math/rand/v2"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -62,6 +64,74 @@ func TestGeneratedDiskExecutorsMatchReference(t *testing.T) {
 	}
 }
 
+func TestSearchModelParityMatrix(t *testing.T) {
+	for _, seed := range []uint64{13, 29, 47} {
+		t.Run(fmt.Sprintf("seed-%d", seed), func(t *testing.T) {
+			model := generateSearchModel(fixedSearchModelConfig(seed))
+			checkDiskExecutorParity(t, model.input, model.queries)
+		})
+	}
+}
+
+func TestSearchModelMetamorphicQueries(t *testing.T) {
+	model := generateSearchModel(fixedSearchModelConfig(13))
+	logical, err := index.Build(corpus.NewTSVReader(bytes.NewReader(model.input)))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	canonical, err := referenceSearch(&logical, "common rare tie", 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, query := range []string{"tie common rare", "common rare tie tie"} {
+		got, err := referenceSearch(&logical, query, 5)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !equalResultBits(got, canonical) {
+			t.Fatalf("query %q changed canonical results", query)
+		}
+	}
+
+	small, err := referenceSearch(&logical, "common rare tie", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	large, err := referenceSearch(&logical, "common rare tie", 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(small) > len(large) || !equalResultBits(small, large[:len(small)]) {
+		t.Fatal("top-2 results are not a prefix of top-7 results")
+	}
+
+	destination := buildDifferentialIndex(t, model.input, indexfile.PostingsCodecVByte, 1)
+	searchOnce := func() []result {
+		idx, err := indexfile.Open(destination)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() {
+			if err := idx.Close(); err != nil {
+				t.Error(err)
+			}
+		}()
+		checkDiskLogicalIndex(t, idx, &logical)
+
+		results, _, err := searchWAND(idx, "common rare tie", 5)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return results
+	}
+	beforeClose := searchOnce()
+	afterReopen := searchOnce()
+	if !equalResultBits(beforeClose, afterReopen) {
+		t.Fatal("close and reopen changed query results")
+	}
+}
+
 func checkDiskExecutorParity(t *testing.T, input []byte, queries []differentialQuery) {
 	t.Helper()
 	logical, err := index.Build(corpus.NewTSVReader(bytes.NewReader(input)))
@@ -77,66 +147,130 @@ func checkDiskExecutorParity(t *testing.T, input []byte, queries []differentialQ
 		{name: "raw", value: indexfile.PostingsCodecRaw},
 		{name: "vbyte", value: indexfile.PostingsCodecVByte},
 	} {
-		t.Run(codec.name, func(t *testing.T) {
-			destination := filepath.Join(t.TempDir(), "index")
-			err := segment.BuildIndex(
-				context.Background(),
-				corpus.NewTSVReader(bytes.NewReader(input)),
-				destination,
-				segment.BuildOptions{
-					FlushTarget:        1,
-					MergeFanIn:         2,
-					MergeWorkers:       2,
-					Codec:              codec.value,
-					TemporaryDirectory: t.TempDir(),
-				},
-			)
-			if err != nil {
-				t.Fatal(err)
-			}
-			disk := openDiskTestIndex(t, destination)
+		for _, layout := range []struct {
+			name        string
+			flushTarget uint64
+		}{
+			{name: "one-run", flushTarget: math.MaxUint64},
+			{name: "many-run", flushTarget: 1},
+		} {
+			t.Run(codec.name+"/"+layout.name, func(t *testing.T) {
+				destination := buildDifferentialIndex(t, input, codec.value, layout.flushTarget)
+				disk := openDiskTestIndex(t, destination)
+				checkDiskLogicalIndex(t, disk, &logical)
 
-			for queryIndex, query := range queries {
-				t.Run(fmt.Sprintf("query-%d", queryIndex), func(t *testing.T) {
-					want, err := referenceSearch(&logical, query.query, query.k)
-					if err != nil {
-						t.Fatal(err)
-					}
-					exhaustive, exhaustiveStats, err := searchDAAT(disk, query.query, query.k)
-					if err != nil {
-						t.Fatal(err)
-					}
-					if !equalResultBits(exhaustive, want) {
-						t.Fatalf("searchDAAT(%q, %d) = %+v, want %+v", query.query, query.k, exhaustive, want)
-					}
+				for queryIndex, query := range queries {
+					t.Run(fmt.Sprintf("query-%d", queryIndex), func(t *testing.T) {
+						want, err := referenceSearch(&logical, query.query, query.k)
+						if err != nil {
+							t.Fatal(err)
+						}
+						exhaustive, exhaustiveStats, err := searchDAAT(disk, query.query, query.k)
+						if err != nil {
+							t.Fatal(err)
+						}
+						if !equalResultBits(exhaustive, want) {
+							t.Fatalf("searchDAAT(%q, %d) = %+v, want %+v", query.query, query.k, exhaustive, want)
+						}
 
-					wand, wandStats, err := searchWAND(disk, query.query, query.k)
-					if err != nil {
-						t.Fatal(err)
-					}
-					if !equalResultBits(wand, exhaustive) {
-						t.Fatalf("searchWAND(%q, %d) = %+v, want %+v", query.query, query.k, wand, exhaustive)
-					}
-					if wandStats.CandidatesScored > exhaustiveStats.CandidatesScored {
-						t.Fatalf("WAND scored %d candidates, exhaustive DAAT scored %d", wandStats.CandidatesScored, exhaustiveStats.CandidatesScored)
-					}
+						wand, wandStats, err := searchWAND(disk, query.query, query.k)
+						if err != nil {
+							t.Fatal(err)
+						}
+						if !equalResultBits(wand, exhaustive) {
+							t.Fatalf("searchWAND(%q, %d) = %+v, want %+v", query.query, query.k, wand, exhaustive)
+						}
+						if wandStats.CandidatesScored > exhaustiveStats.CandidatesScored {
+							t.Fatalf("WAND scored %d candidates, exhaustive DAAT scored %d", wandStats.CandidatesScored, exhaustiveStats.CandidatesScored)
+						}
 
-					postings, candidates, err := expectedDAATWork(logical.Postings, query.query, query.k)
-					if err != nil {
-						t.Fatal(err)
-					}
-					if exhaustiveStats.PostingsDecoded != postings || exhaustiveStats.NextCalls != postings ||
-						exhaustiveStats.CandidatesScored != candidates || exhaustiveStats.AdvanceCalls != 0 {
-						t.Fatalf("stats = %+v, want postings/next %d, candidates %d, advances 0", exhaustiveStats, postings, candidates)
-					}
-					requestedBytes[codec.value] += exhaustiveStats.BytesRequested
-				})
-			}
-		})
+						postings, candidates, err := expectedDAATWork(logical.Postings, query.query, query.k)
+						if err != nil {
+							t.Fatal(err)
+						}
+						if exhaustiveStats.PostingsDecoded != postings || exhaustiveStats.NextCalls != postings ||
+							exhaustiveStats.CandidatesScored != candidates || exhaustiveStats.AdvanceCalls != 0 {
+							t.Fatalf("stats = %+v, want postings/next %d, candidates %d, advances 0", exhaustiveStats, postings, candidates)
+						}
+						requestedBytes[codec.value] += exhaustiveStats.BytesRequested
+					})
+				}
+			})
+		}
 	}
 	if requestedBytes[indexfile.PostingsCodecRaw] == requestedBytes[indexfile.PostingsCodecVByte] {
 		t.Fatalf("raw and VByte requested the same %d posting bytes", requestedBytes[indexfile.PostingsCodecRaw])
 	}
+}
+
+func checkDiskLogicalIndex(t *testing.T, disk *indexfile.Index, logical *index.Index) {
+	t.Helper()
+	if disk.DocumentsWithTerms() != logical.DocumentsWithTerms {
+		t.Fatalf("documents with terms = %d, want %d", disk.DocumentsWithTerms(), logical.DocumentsWithTerms)
+	}
+	for documentID, document := range logical.Documents {
+		id := index.DocumentID(documentID)
+		if length := disk.DocumentLength(id); length != document.Length {
+			t.Fatalf("document %d length = %d, want %d", id, length, document.Length)
+		}
+		externalID, err := disk.ExternalID(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if externalID != document.ExternalID {
+			t.Fatalf("document %d external ID = %q, want %q", id, externalID, document.ExternalID)
+		}
+	}
+	for term, want := range logical.Postings {
+		cursor, found, err := disk.Postings(term)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !found {
+			t.Fatalf("term %q is missing", term)
+		}
+
+		got := make([]index.Posting, 0, len(want))
+		for {
+			posting, valid := cursor.Current()
+			if !valid {
+				break
+			}
+			got = append(got, posting)
+			if _, err := cursor.Next(); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if !slices.Equal(got, want) {
+			t.Fatalf("term %q postings = %+v, want %+v", term, got, want)
+		}
+	}
+}
+
+func buildDifferentialIndex(
+	t *testing.T,
+	input []byte,
+	codec indexfile.PostingsCodec,
+	flushTarget uint64,
+) string {
+	t.Helper()
+	destination := filepath.Join(t.TempDir(), "index")
+	err := segment.BuildIndex(
+		context.Background(),
+		corpus.NewTSVReader(bytes.NewReader(input)),
+		destination,
+		segment.BuildOptions{
+			FlushTarget:        flushTarget,
+			MergeFanIn:         2,
+			MergeWorkers:       2,
+			Codec:              codec,
+			TemporaryDirectory: t.TempDir(),
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return destination
 }
 
 func expectedDAATWork(

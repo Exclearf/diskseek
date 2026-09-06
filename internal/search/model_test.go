@@ -85,6 +85,11 @@ func generateSearchModel(config searchModelConfig) searchModel {
 		{query: "tie", k: 2},
 		{query: "missing", k: config.documentCount + 1},
 		{query: "common common rare", k: 0},
+		{query: "common rare tie", k: 5},
+		{query: "tie common rare", k: 5},
+		{query: "common rare tie tie", k: 5},
+		{query: "common rare tie", k: 2},
+		{query: "common rare tie", k: 7},
 	}
 	for range config.randomQueryCount {
 		termCount := random.IntN(5) + 1
@@ -101,15 +106,19 @@ func generateSearchModel(config searchModelConfig) searchModel {
 	return searchModel{input: []byte(input.String()), queries: queries}
 }
 
-func TestSearchModelIsReproducible(t *testing.T) {
-	config := searchModelConfig{
-		seed:               13,
+func fixedSearchModelConfig(seed uint64) searchModelConfig {
+	return searchModelConfig{
+		seed:               seed,
 		documentCount:      131,
 		emptyDocumentCount: 2,
 		vocabularySize:     8,
 		maxDocumentLength:  32,
 		randomQueryCount:   5,
 	}
+}
+
+func TestSearchModelIsReproducible(t *testing.T) {
+	config := fixedSearchModelConfig(13)
 
 	t.Run(fmt.Sprintf("seed-%d", config.seed), func(t *testing.T) {
 		first := generateSearchModel(config)
