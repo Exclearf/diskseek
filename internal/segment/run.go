@@ -33,6 +33,7 @@ type runWriter struct {
 	lastTerm          string
 	lastDocumentID    index.DocumentID
 	hasLastDocumentID bool
+	encodedPosting    [encodedPostingBytes]byte
 	err               error
 	closed            bool
 }
@@ -79,7 +80,7 @@ func (w *runWriter) writePosting(posting index.Posting) error {
 	if w.hasLastDocumentID && posting.DocumentID <= w.lastDocumentID {
 		return w.fail(errors.New("run posting document IDs are not strictly increasing"))
 	}
-	if err := writeRunPosting(w.writer, w.header, posting); err != nil {
+	if err := writeRunPosting(w.writer, w.encodedPosting[:], w.header, posting); err != nil {
 		return w.fail(err)
 	}
 
@@ -130,6 +131,7 @@ type runReader struct {
 	lastTerm          string
 	lastDocumentID    index.DocumentID
 	hasLastDocumentID bool
+	encodedPosting    [encodedPostingBytes]byte
 }
 
 func newRunReader(input io.Reader) (*runReader, error) {
@@ -164,7 +166,7 @@ func (r *runReader) nextPosting() (index.Posting, error) {
 		return index.Posting{}, errors.New("run posting has no active term")
 	}
 
-	posting, err := readRunPosting(r.reader, r.header)
+	posting, err := readRunPosting(r.reader, r.encodedPosting[:], r.header)
 	if err != nil {
 		return index.Posting{}, err
 	}
@@ -284,7 +286,7 @@ func readRunTermHeader(reader io.Reader, run runHeader) (string, uint64, error) 
 	return string(termBytes), postingCount, nil
 }
 
-func writeRunPosting(writer io.Writer, run runHeader, posting index.Posting) error {
+func writeRunPosting(writer io.Writer, encoded []byte, run runHeader, posting index.Posting) error {
 	if posting.Frequency == 0 {
 		return errors.New("run posting has zero frequency")
 	}
@@ -292,18 +294,16 @@ func writeRunPosting(writer io.Writer, run runHeader, posting index.Posting) err
 		return errors.New("run posting document ID is outside the run")
 	}
 
-	var encoded [encodedPostingBytes]byte
 	binary.LittleEndian.PutUint32(encoded[0:4], uint32(posting.DocumentID))
 	binary.LittleEndian.PutUint32(encoded[4:8], posting.Frequency)
-	if _, err := writer.Write(encoded[:]); err != nil {
+	if _, err := writer.Write(encoded); err != nil {
 		return fmt.Errorf("write run posting: %w", err)
 	}
 	return nil
 }
 
-func readRunPosting(reader io.Reader, run runHeader) (index.Posting, error) {
-	var encoded [encodedPostingBytes]byte
-	if _, err := io.ReadFull(reader, encoded[:]); err != nil {
+func readRunPosting(reader io.Reader, encoded []byte, run runHeader) (index.Posting, error) {
+	if _, err := io.ReadFull(reader, encoded); err != nil {
 		return index.Posting{}, fmt.Errorf("read run posting: %w", err)
 	}
 

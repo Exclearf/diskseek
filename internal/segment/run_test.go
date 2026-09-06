@@ -146,9 +146,10 @@ func TestReadRunTermHeaderEndMarker(t *testing.T) {
 
 func TestRunPostingRoundTripAndBytes(t *testing.T) {
 	var output bytes.Buffer
+	var encoded [encodedPostingBytes]byte
 	posting := index.Posting{DocumentID: 0x01020304, Frequency: 0x05060708}
 	header := runHeader{firstDocumentID: posting.DocumentID, documentCount: 1}
-	if err := writeRunPosting(&output, header, posting); err != nil {
+	if err := writeRunPosting(&output, encoded[:], header, posting); err != nil {
 		t.Fatal(err)
 	}
 
@@ -157,7 +158,7 @@ func TestRunPostingRoundTripAndBytes(t *testing.T) {
 		t.Fatalf("posting bytes = %s, want %s", got, want)
 	}
 
-	got, err := readRunPosting(bytes.NewReader(output.Bytes()), header)
+	got, err := readRunPosting(bytes.NewReader(output.Bytes()), encoded[:], header)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +175,8 @@ func TestWriteRunPostingRejectsInvalidValues(t *testing.T) {
 	}
 
 	for _, posting := range tests {
-		if err := writeRunPosting(io.Discard, header, posting); err == nil {
+		var encoded [encodedPostingBytes]byte
+		if err := writeRunPosting(io.Discard, encoded[:], header, posting); err == nil {
 			t.Errorf("writeRunPosting(%+v) error = nil", posting)
 		}
 	}
@@ -193,7 +195,8 @@ func TestReadRunPostingRejectsInvalidData(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if _, err := readRunPosting(bytes.NewReader(test.data), header); err == nil {
+			var encoded [encodedPostingBytes]byte
+			if _, err := readRunPosting(bytes.NewReader(test.data), encoded[:], header); err == nil {
 				t.Fatal("readRunPosting() error = nil")
 			}
 		})
