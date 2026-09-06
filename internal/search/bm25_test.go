@@ -1,9 +1,14 @@
 package search
 
 import (
+	"bytes"
 	"math"
 	"math/rand"
 	"testing"
+
+	"github.com/Exclearf/diskseek/internal/corpus"
+	"github.com/Exclearf/diskseek/internal/index"
+	"github.com/Exclearf/diskseek/internal/indexfile"
 )
 
 func TestBM25TermScore(t *testing.T) {
@@ -75,9 +80,10 @@ func TestBM25TermUpperBoundDominatesValidPostings(t *testing.T) {
 		idf := bm25IDF(documentsWithTerms, documentFrequency)
 		score := bm25TermScore(idf, termFrequency, documentLength, averageDocumentLength)
 		bound := bm25TermUpperBound(idf, maxTermFrequency, averageDocumentLength)
-		if math.IsNaN(score) || math.IsInf(score, 0) || math.IsNaN(bound) || math.IsInf(bound, 0) || score > bound {
+		if math.IsNaN(score) || math.IsInf(score, 0) || score < 0 ||
+			math.IsNaN(bound) || math.IsInf(bound, 0) || bound < 0 || score > bound {
 			t.Fatalf(
-				"score %v exceeds bound %v for tf=%d, length=%d, maxTF=%d, avgdl=%v, N=%d, df=%d",
+				"invalid score %v or bound %v for tf=%d, length=%d, maxTF=%d, avgdl=%v, N=%d, df=%d",
 				score,
 				bound,
 				termFrequency,
@@ -118,5 +124,49 @@ func TestBM25TermUpperBoundDominatesValidPostings(t *testing.T) {
 			documentLength,
 			averageDocumentLength,
 		)
+	}
+}
+
+func TestDecodedPostingScoresRespectMaxTFBounds(t *testing.T) {
+	model := generateSearchModel(fixedSearchModelConfig(13))
+	logical, err := index.Build(corpus.NewTSVReader(bytes.NewReader(model.input)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	destination := buildDifferentialIndex(t, model.input, indexfile.PostingsCodecVByte, 1)
+	disk := openDiskTestIndex(t, destination)
+
+	for term := range logical.Postings {
+		cursor, found, err := disk.Postings(term)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !found {
+			t.Fatalf("term %q is missing", term)
+		}
+		idf := bm25IDF(disk.DocumentsWithTerms(), cursor.DocumentFrequency())
+		bound := bm25TermUpperBound(idf, cursor.MaxTermFrequency(), disk.AverageDocumentLength())
+		if math.IsNaN(bound) || math.IsInf(bound, 0) || bound < 0 {
+			t.Fatalf("term %q has invalid bound %v", term, bound)
+		}
+
+		for {
+			posting, valid := cursor.Current()
+			if !valid {
+				break
+			}
+			score := bm25TermScore(
+				idf,
+				posting.Frequency,
+				disk.DocumentLength(posting.DocumentID),
+				disk.AverageDocumentLength(),
+			)
+			if math.IsNaN(score) || math.IsInf(score, 0) || score < 0 || score > bound {
+				t.Fatalf("term %q document %d has score %v with bound %v", term, posting.DocumentID, score, bound)
+			}
+			if _, err := cursor.Next(); err != nil {
+				t.Fatal(err)
+			}
+		}
 	}
 }
