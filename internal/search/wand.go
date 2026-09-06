@@ -33,6 +33,19 @@ type wandStats struct {
 	ThresholdChanges uint64
 }
 
+func Search(ctx context.Context, idx *indexfile.Index, query string, limit int) ([]Result, error) {
+	ranked, _, err := searchWAND(ctx, idx, query, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	results := make([]Result, len(ranked))
+	for position, item := range ranked {
+		results[position] = Result{ExternalID: item.ExternalID, Score: item.Score}
+	}
+	return results, nil
+}
+
 func selectWANDPivot(plan *diskQueryPlan, cursors []wandCursor, threshold float64) (wandPivot, bool) {
 	slices.SortFunc(cursors, func(left, right wandCursor) int {
 		if order := cmp.Compare(left.documentID, right.documentID); order != 0 {

@@ -17,6 +17,11 @@ type result struct {
 	Score      float64
 }
 
+type Result struct {
+	ExternalID string
+	Score      float64
+}
+
 func compareResults(left, right result) int {
 	if left.Score > right.Score {
 		return -1
