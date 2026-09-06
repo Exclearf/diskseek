@@ -11,6 +11,7 @@ import (
 	"syscall"
 
 	"github.com/Exclearf/diskseek/internal/httpapi"
+	"github.com/Exclearf/diskseek/internal/webui"
 	"github.com/spf13/cobra"
 )
 
@@ -38,6 +39,10 @@ func newCommand() *cobra.Command {
 			if len(datasetPaths) == 0 {
 				return errors.New("at least one dataset is required")
 			}
+			frontend, err := webui.New()
+			if err != nil {
+				return err
+			}
 
 			datasets := make(map[string]httpapi.Dataset, len(datasetPaths))
 			defer func() {
@@ -57,7 +62,10 @@ func newCommand() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("listen: %w", err)
 			}
-			server := http.Server{Handler: httpapi.New(datasets)}
+			handler := http.NewServeMux()
+			handler.Handle("/v1/", httpapi.New(datasets))
+			handler.Handle("/", frontend)
+			server := http.Server{Handler: handler}
 			stop := context.AfterFunc(command.Context(), func() {
 				_ = server.Close()
 			})
