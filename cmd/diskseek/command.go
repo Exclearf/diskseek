@@ -1,17 +1,27 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strconv"
 
+	"github.com/Exclearf/diskseek/internal/corpus"
 	"github.com/Exclearf/diskseek/internal/indexfile"
 	"github.com/Exclearf/diskseek/internal/search"
+	"github.com/Exclearf/diskseek/internal/segment"
 	"github.com/spf13/cobra"
 )
 
 const version = "0.1.0"
+
+const (
+	defaultFlushTarget  uint64 = 64 << 20
+	defaultMergeFanIn          = 16
+	defaultMergeWorkers        = 1
+)
 
 func newRootCommand(version string, stdout, stderr io.Writer) *cobra.Command {
 	command := &cobra.Command{
@@ -23,10 +33,65 @@ func newRootCommand(version string, stdout, stderr io.Writer) *cobra.Command {
 	}
 	command.SetOut(stdout)
 	command.SetErr(stderr)
+	command.AddCommand(newIndexCommand())
 	command.AddCommand(newQueryCommand())
 	command.AddCommand(newVerifyCommand())
 	command.AddCommand(newVersionCommand(version))
 	return command
+}
+
+func newIndexCommand() *cobra.Command {
+	codecName := "vbyte"
+	options := segment.BuildOptions{
+		FlushTarget:  defaultFlushTarget,
+		MergeFanIn:   defaultMergeFanIn,
+		MergeWorkers: defaultMergeWorkers,
+	}
+	command := &cobra.Command{
+		Use:   "index CORPUS DESTINATION",
+		Short: "Build an index from a TSV corpus",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(command *cobra.Command, args []string) error {
+			codec, err := parseCodec(codecName)
+			if err != nil {
+				return err
+			}
+			options.Codec = codec
+
+			input, err := os.Open(args[0])
+			if err != nil {
+				return fmt.Errorf("open corpus: %w", err)
+			}
+			defer input.Close()
+
+			if err := segment.BuildIndex(
+				command.Context(),
+				corpus.NewTSVReader(input),
+				args[1],
+				options,
+			); err != nil {
+				return fmt.Errorf("build index: %w", err)
+			}
+			return nil
+		},
+	}
+	command.Flags().Uint64Var(&options.FlushTarget, "flush-target", options.FlushTarget, "segment flush target in bytes")
+	command.Flags().IntVar(&options.MergeFanIn, "merge-fan-in", options.MergeFanIn, "maximum input runs per merge")
+	command.Flags().IntVar(&options.MergeWorkers, "merge-workers", options.MergeWorkers, "concurrent merge workers")
+	command.Flags().StringVar(&codecName, "codec", codecName, "postings codec: raw or vbyte")
+	command.Flags().StringVar(&options.TemporaryDirectory, "temp-dir", "", "directory for temporary build files")
+	return command
+}
+
+func parseCodec(name string) (indexfile.PostingsCodec, error) {
+	switch name {
+	case "raw":
+		return indexfile.PostingsCodecRaw, nil
+	case "vbyte":
+		return indexfile.PostingsCodecVByte, nil
+	default:
+		return 0, fmt.Errorf("unsupported postings codec %q", name)
+	}
 }
 
 func newQueryCommand() *cobra.Command {
@@ -91,8 +156,9 @@ func newVersionCommand(version string) *cobra.Command {
 	}
 }
 
-func execute(args []string, stdout, stderr io.Writer, version string) int {
+func execute(ctx context.Context, args []string, stdout, stderr io.Writer, version string) int {
 	command := newRootCommand(version, stdout, stderr)
+	command.SetContext(ctx)
 	command.SetArgs(args)
 	if err := command.Execute(); err != nil {
 		return 1

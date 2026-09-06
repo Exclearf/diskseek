@@ -21,6 +21,7 @@ func TestWritePersistentDocumentFilesReadsSidecar(t *testing.T) {
 
 	var gotLengths, gotOffsets, gotData bytes.Buffer
 	gotMetadata, err := writePersistentDocumentFiles(
+		context.Background(),
 		bytes.NewReader(encodeDocuments(t, documents)),
 		&gotLengths,
 		&gotOffsets,
@@ -64,6 +65,7 @@ func TestWritePersistentTermFilesReadsRun(t *testing.T) {
 
 	var gotTerms, gotPostings bytes.Buffer
 	gotMetadata, err := writePersistentTermFiles(
+		context.Background(),
 		bytes.NewReader(encodeMergeTestRun(t, runHeader{documentCount: 2}, terms)),
 		&gotTerms,
 		&gotPostings,
@@ -115,6 +117,30 @@ func TestWritePersistentTermFilesReadsRun(t *testing.T) {
 	}
 }
 
+func TestWritePersistentTermFilesStopsWhenCanceled(t *testing.T) {
+	data := encodeHotTermRun(t, 0, 1<<13)
+	ctx, cancel := context.WithCancel(context.Background())
+	input := &cancelingReader{
+		Reader:           bytes.NewReader(data),
+		cancel:           cancel,
+		readsUntilCancel: 2,
+	}
+
+	_, err := writePersistentTermFiles(
+		ctx,
+		input,
+		io.Discard,
+		io.Discard,
+		indexfile.PostingsCodecRaw,
+	)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("writePersistentTermFiles() error = %v, want %v", err, context.Canceled)
+	}
+	if input.readBytes > 2*runBufferBytes {
+		t.Fatalf("bytes read after cancellation = %d, want at most %d", input.readBytes, 2*runBufferBytes)
+	}
+}
+
 func TestWriteIndexCreatesGoldenCodecDirectories(t *testing.T) {
 	runPath, documentsPath := writeIndexTestSources(t)
 	tests := []struct {
@@ -128,7 +154,7 @@ func TestWriteIndexCreatesGoldenCodecDirectories(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			destination := filepath.Join(t.TempDir(), "index")
-			if err := writeIndex(destination, runPath, documentsPath, test.codec); err != nil {
+			if err := writeIndex(context.Background(), destination, runPath, documentsPath, test.codec); err != nil {
 				t.Fatal(err)
 			}
 
@@ -152,7 +178,7 @@ func TestWriteIndexRemovesIncompleteDirectory(t *testing.T) {
 	}
 	destination := filepath.Join(directory, "index")
 
-	if err := writeIndex(destination, runPath, documentsPath, indexfile.PostingsCodecVByte); err == nil {
+	if err := writeIndex(context.Background(), destination, runPath, documentsPath, indexfile.PostingsCodecVByte); err == nil {
 		t.Fatal("writeIndex() error = nil")
 	}
 	if _, err := os.Stat(destination); !errors.Is(err, os.ErrNotExist) {
@@ -168,7 +194,7 @@ func TestWriteIndexPreservesExistingDestination(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := writeIndex(destination, runPath, documentsPath, indexfile.PostingsCodecVByte); err == nil {
+	if err := writeIndex(context.Background(), destination, runPath, documentsPath, indexfile.PostingsCodecVByte); err == nil {
 		t.Fatal("writeIndex() error = nil")
 	}
 	if data, err := os.ReadFile(markerPath); err != nil || string(data) != "keep" {
@@ -216,7 +242,7 @@ func buildPersistentTestIndex(t *testing.T, input []byte, flushTarget uint64) (s
 		t.Fatal(err)
 	}
 	destination := filepath.Join(t.TempDir(), "index")
-	if err := writeIndex(destination, mergedRun, result.documentsPath, indexfile.PostingsCodecVByte); err != nil {
+	if err := writeIndex(context.Background(), destination, mergedRun, result.documentsPath, indexfile.PostingsCodecVByte); err != nil {
 		t.Fatal(err)
 	}
 	return destination, runCount

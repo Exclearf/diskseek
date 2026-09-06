@@ -85,6 +85,55 @@ func TestBuildIndexCreatesIndexAndRemovesTemporaryArtifacts(t *testing.T) {
 	}
 }
 
+func TestBuildIndexRejectsInvalidOptionsBeforeReadingCorpus(t *testing.T) {
+	valid := BuildOptions{
+		FlushTarget:  1,
+		MergeFanIn:   2,
+		MergeWorkers: 1,
+		Codec:        indexfile.PostingsCodecVByte,
+	}
+	tests := []struct {
+		name       string
+		invalidate func(*BuildOptions)
+	}{
+		{"flush target", func(options *BuildOptions) { options.FlushTarget = 0 }},
+		{"fan-in", func(options *BuildOptions) { options.MergeFanIn = 1 }},
+		{"workers", func(options *BuildOptions) { options.MergeWorkers = 0 }},
+		{"codec", func(options *BuildOptions) { options.Codec = 3 }},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			parent := t.TempDir()
+			input := strings.NewReader("unread")
+			options := valid
+			test.invalidate(&options)
+			options.TemporaryDirectory = parent
+
+			err := BuildIndex(
+				context.Background(),
+				corpus.NewTSVReader(input),
+				filepath.Join(parent, "index"),
+				options,
+			)
+			if err == nil {
+				t.Fatal("BuildIndex() error = nil")
+			}
+			if input.Len() != len("unread") {
+				t.Fatal("BuildIndex() read the corpus before rejecting its options")
+			}
+
+			entries, err := os.ReadDir(parent)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(entries) != 0 {
+				t.Fatalf("created entries = %v, want none", entries)
+			}
+		})
+	}
+}
+
 func TestBuildRemovesOnlyOwnedArtifactsAfterCorpusError(t *testing.T) {
 	parent := t.TempDir()
 	keep := filepath.Join(parent, "keep")

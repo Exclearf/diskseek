@@ -33,6 +33,10 @@ func BuildIndex(
 	destination string,
 	options BuildOptions,
 ) (err error) {
+	if err := validateBuildOptions(options); err != nil {
+		return err
+	}
+
 	result, err := build(ctx, records, options.FlushTarget, options.TemporaryDirectory)
 	if err != nil {
 		return fmt.Errorf("build runs: %w", err)
@@ -51,8 +55,24 @@ func BuildIndex(
 	if err != nil {
 		return fmt.Errorf("merge runs: %w", err)
 	}
-	if err := writeIndex(destination, mergedRun, result.documentsPath, options.Codec); err != nil {
+	if err := writeIndex(ctx, destination, mergedRun, result.documentsPath, options.Codec); err != nil {
 		return fmt.Errorf("write index: %w", err)
+	}
+	return nil
+}
+
+func validateBuildOptions(options BuildOptions) error {
+	if options.FlushTarget == 0 {
+		return errors.New("segment flush target must be positive")
+	}
+	if options.MergeFanIn < 2 {
+		return errors.New("merge fan-in must be at least two")
+	}
+	if options.MergeWorkers < 1 {
+		return errors.New("merge worker count must be positive")
+	}
+	if options.Codec != indexfile.PostingsCodecRaw && options.Codec != indexfile.PostingsCodecVByte {
+		return errors.New("unsupported postings codec")
 	}
 	return nil
 }

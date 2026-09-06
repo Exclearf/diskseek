@@ -1,6 +1,7 @@
 package segment
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -11,9 +12,13 @@ import (
 )
 
 func writeIndex(
+	ctx context.Context,
 	destination, runPath, documentsPath string,
 	codec indexfile.PostingsCodec,
 ) (err error) {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err := os.Mkdir(destination, 0o755); err != nil {
 		return fmt.Errorf("create index directory: %w", err)
 	}
@@ -72,11 +77,12 @@ func writeIndex(
 	}
 	openFiles = append(openFiles, documentData)
 
-	termMetadata, err := writePersistentTermFiles(run, terms, postings, codec)
+	termMetadata, err := writePersistentTermFiles(ctx, run, terms, postings, codec)
 	if err != nil {
 		return fmt.Errorf("write term files: %w", err)
 	}
 	documentMetadata, err := writePersistentDocumentFiles(
+		ctx,
 		documents,
 		documentLengths,
 		documentOffsets,
@@ -90,6 +96,9 @@ func writeIndex(
 	openFiles = nil
 	if closeErr != nil {
 		return fmt.Errorf("close index data files: %w", closeErr)
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 
 	metadata, err := os.Create(filepath.Join(destination, indexfile.MetadataFileName))
@@ -109,12 +118,13 @@ func writeIndex(
 }
 
 func writePersistentDocumentFiles(
+	ctx context.Context,
 	sidecar io.Reader,
 	lengthOutput io.Writer,
 	offsetOutput io.Writer,
 	dataOutput io.Writer,
 ) (indexfile.DocumentFilesMetadata, error) {
-	documents, err := newDocumentReader(sidecar)
+	documents, err := newDocumentReader(contextReader{ctx, sidecar})
 	if err != nil {
 		return indexfile.DocumentFilesMetadata{}, err
 	}
@@ -122,14 +132,27 @@ func writePersistentDocumentFiles(
 }
 
 func writePersistentTermFiles(
+	ctx context.Context,
 	run io.Reader,
 	termOutput io.Writer,
 	postingOutput io.Writer,
 	codec indexfile.PostingsCodec,
 ) (indexfile.TermFilesMetadata, error) {
-	terms, err := newRunReader(run)
+	terms, err := newRunReader(contextReader{ctx, run})
 	if err != nil {
 		return indexfile.TermFilesMetadata{}, err
 	}
 	return indexfile.WriteTermFiles(termOutput, postingOutput, codec, terms.nextTerm, terms.nextPosting)
+}
+
+type contextReader struct {
+	ctx    context.Context
+	reader io.Reader
+}
+
+func (r contextReader) Read(data []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return r.reader.Read(data)
 }
