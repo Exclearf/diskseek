@@ -50,7 +50,10 @@ func (t *topK) add(candidate result) {
 		return
 	}
 	if len(t.items) < t.limit {
-		heap.Push(&t.items, candidate)
+		t.items = append(t.items, candidate)
+		if len(t.items) == t.limit {
+			heap.Init(&t.items)
+		}
 		return
 	}
 	if compareResults(candidate, t.items[0]) >= 0 {
