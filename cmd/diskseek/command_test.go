@@ -63,3 +63,25 @@ func TestQueryCommand(t *testing.T) {
 		t.Fatal("exit status = 0 for a zero query limit")
 	}
 }
+
+func TestVerifyCommand(t *testing.T) {
+	indexPath := filepath.Join("..", "..", "internal", "indexfile", "testdata", "golden-v1", "vbyte")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	if got := execute([]string{"verify", indexPath}, &stdout, &stderr, testVersion); got != 0 {
+		t.Fatalf("exit status = %d, want 0; stderr = %q", got, stderr.String())
+	}
+	if got, want := stdout.String(), "verified\n"; got != want {
+		t.Fatalf("stdout = %q, want %q", got, want)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want no output", stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if got := execute([]string{"verify", filepath.Join(t.TempDir(), "missing")}, &stdout, &stderr, testVersion); got == 0 {
+		t.Fatal("exit status = 0 for a missing index")
+	}
+}

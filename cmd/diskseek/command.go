@@ -24,6 +24,7 @@ func newRootCommand(version string, stdout, stderr io.Writer) *cobra.Command {
 	command.SetOut(stdout)
 	command.SetErr(stderr)
 	command.AddCommand(newQueryCommand())
+	command.AddCommand(newVerifyCommand())
 	command.AddCommand(newVersionCommand(version))
 	return command
 }
@@ -60,6 +61,23 @@ func newQueryCommand() *cobra.Command {
 	}
 	command.Flags().IntVar(&limit, "limit", limit, "maximum number of results")
 	return command
+}
+
+func newVerifyCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "verify INDEX",
+		Short: "Verify an index",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(command *cobra.Command, args []string) error {
+			if err := indexfile.Verify(command.Context(), args[0]); err != nil {
+				return fmt.Errorf("verify index: %w", err)
+			}
+			if _, err := fmt.Fprintln(command.OutOrStdout(), "verified"); err != nil {
+				return fmt.Errorf("write result: %w", err)
+			}
+			return nil
+		},
+	}
 }
 
 func newVersionCommand(version string) *cobra.Command {
