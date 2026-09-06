@@ -8,41 +8,33 @@ import (
 	"github.com/Exclearf/diskseek/internal/indexfile"
 )
 
-type daatStats struct {
-	PostingsDecoded  uint64
-	NextCalls        uint64
-	AdvanceCalls     uint64
-	CandidatesScored uint64
-	BytesRequested   uint64
-}
-
-func searchDAAT(ctx context.Context, idx *indexfile.Index, query string, k int) ([]result, daatStats, error) {
+func searchDAAT(ctx context.Context, idx *indexfile.Index, query string, k int) ([]result, QueryStats, error) {
 	if k <= 0 {
 		if err := ctx.Err(); err != nil {
-			return nil, daatStats{}, err
+			return nil, QueryStats{}, err
 		}
 		if _, err := prepareQuery(query); err != nil {
-			return nil, daatStats{}, err
+			return nil, QueryStats{}, err
 		}
 		if err := ctx.Err(); err != nil {
-			return nil, daatStats{}, err
+			return nil, QueryStats{}, err
 		}
-		return nil, daatStats{}, nil
+		return nil, QueryStats{}, nil
 	}
 
 	plan, err := buildDiskQueryPlan(ctx, idx, query)
 	if err != nil {
-		return nil, daatStats{}, err
+		return nil, QueryStats{}, err
 	}
 	return executeDAAT(ctx, idx, plan, k)
 }
 
-func executeDAAT(ctx context.Context, idx *indexfile.Index, plan diskQueryPlan, k int) ([]result, daatStats, error) {
+func executeDAAT(ctx context.Context, idx *indexfile.Index, plan diskQueryPlan, k int) ([]result, QueryStats, error) {
 	collector := newTopK(k)
 	var candidatesScored uint64
 	for {
 		if err := ctx.Err(); err != nil {
-			return nil, daatStats{}, err
+			return nil, QueryStats{}, err
 		}
 		documentID, found := nextCandidate(plan.terms)
 		if !found {
@@ -53,7 +45,7 @@ func executeDAAT(ctx context.Context, idx *indexfile.Index, plan diskQueryPlan, 
 		var score float64
 		for termIndex := range plan.terms {
 			if err := ctx.Err(); err != nil {
-				return nil, daatStats{}, err
+				return nil, QueryStats{}, err
 			}
 			term := &plan.terms[termIndex]
 			posting, current := term.cursor.Current()
@@ -67,7 +59,7 @@ func executeDAAT(ctx context.Context, idx *indexfile.Index, plan diskQueryPlan, 
 				plan.averageDocumentLength,
 			)
 			if _, err := term.cursor.NextContext(ctx); err != nil {
-				return nil, daatStats{}, fmt.Errorf("advance %q postings: %w", term.term, err)
+				return nil, QueryStats{}, fmt.Errorf("advance %q postings: %w", term.term, err)
 			}
 		}
 		collector.add(result{DocumentID: documentID, Score: score})
@@ -75,20 +67,27 @@ func executeDAAT(ctx context.Context, idx *indexfile.Index, plan diskQueryPlan, 
 	}
 
 	if err := ctx.Err(); err != nil {
-		return nil, daatStats{}, err
+		return nil, QueryStats{}, err
 	}
 	results := collector.finish()
 	if err := resolveExternalIDs(ctx, idx, results); err != nil {
-		return nil, daatStats{}, err
+		return nil, QueryStats{}, err
 	}
 
-	stats := daatStats{CandidatesScored: candidatesScored}
+	stats := QueryStats{
+		QueryTerms:       plan.queryTerms,
+		MatchedTerms:     uint64(len(plan.terms)),
+		CandidatesScored: candidatesScored,
+	}
 	for _, term := range plan.terms {
 		cursorStats := term.cursor.Stats()
-		stats.PostingsDecoded += cursorStats.PostingsDecoded
 		stats.NextCalls += cursorStats.NextCalls
 		stats.AdvanceCalls += cursorStats.AdvanceCalls
-		stats.BytesRequested += cursorStats.BytesRequested
+		stats.BlockHeadersRead += cursorStats.BlockHeadersRead
+		stats.BlocksSkipped += cursorStats.BlocksSkipped
+		stats.BlocksDecoded += cursorStats.BlocksDecoded
+		stats.PostingsDecoded += cursorStats.PostingsDecoded
+		stats.LogicalBytesRequested += cursorStats.BytesRequested
 	}
 	return results, stats, nil
 }

@@ -14,6 +14,7 @@ type buildStats struct {
 	documentCount      uint64
 	documentsWithTerms uint64
 	totalTokenCount    uint64
+	postingCount       uint64
 	maxAccountedBytes  uint64
 }
 
@@ -74,7 +75,7 @@ func buildRuns(
 			return buildStats{}, err
 		}
 		documentLength := uint32(len(tokens))
-		accountedBytes := segment.addDocument(tokens)
+		accountedBytes, postingCount := segment.addDocument(tokens)
 		stats.maxAccountedBytes = max(stats.maxAccountedBytes, accountedBytes)
 		if err := documents.write(index.DocumentMeta{
 			ExternalID: record.ExternalID,
@@ -87,6 +88,7 @@ func buildRuns(
 			stats.documentsWithTerms++
 		}
 		stats.totalTokenCount += uint64(documentLength)
+		stats.postingCount += postingCount
 
 		if accountedBytes >= flushTarget {
 			if err := flush(); err != nil {

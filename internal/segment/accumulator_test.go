@@ -12,14 +12,17 @@ import (
 
 func TestSegmentStateAddsDocuments(t *testing.T) {
 	segment := newSegmentState(7)
-	if got, want := segment.addDocument([]string{"a", "a"}), segmentBufferBytes+14; got != want {
-		t.Fatalf("first document high point = %d, want %d", got, want)
+	accountedBytes, postingCount := segment.addDocument([]string{"a", "a"})
+	if want := segmentBufferBytes + 14; accountedBytes != want || postingCount != 1 {
+		t.Fatalf("first document statistics = (%d, %d), want (%d, 1)", accountedBytes, postingCount, want)
 	}
-	if got, want := segment.addDocument([]string{"a", "b"}), segmentBufferBytes+36; got != want {
-		t.Fatalf("second document high point = %d, want %d", got, want)
+	accountedBytes, postingCount = segment.addDocument([]string{"a", "b"})
+	if want := segmentBufferBytes + 36; accountedBytes != want || postingCount != 2 {
+		t.Fatalf("second document statistics = (%d, %d), want (%d, 2)", accountedBytes, postingCount, want)
 	}
-	if got, want := segment.addDocument(nil), segmentBufferBytes+26; got != want {
-		t.Fatalf("empty document high point = %d, want %d", got, want)
+	accountedBytes, postingCount = segment.addDocument(nil)
+	if want := segmentBufferBytes + 26; accountedBytes != want || postingCount != 0 {
+		t.Fatalf("empty document statistics = (%d, %d), want (%d, 0)", accountedBytes, postingCount, want)
 	}
 
 	wantPostings := map[string][]index.Posting{

@@ -65,7 +65,7 @@ func newIndexCommand() *cobra.Command {
 			}
 			defer input.Close()
 
-			if err := segment.BuildIndex(
+			if _, err := segment.BuildIndex(
 				command.Context(),
 				corpus.NewTSVReader(input),
 				args[1],

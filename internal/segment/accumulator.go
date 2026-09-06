@@ -23,7 +23,7 @@ func newSegmentState(firstDocumentID index.DocumentID) segmentState {
 	}
 }
 
-func (s *segmentState) addDocument(tokens []string) uint64 {
+func (s *segmentState) addDocument(tokens []string) (uint64, uint64) {
 	frequencies := make(map[string]uint32)
 	var documentBytes uint64
 	for _, token := range tokens {
@@ -49,7 +49,7 @@ func (s *segmentState) addDocument(tokens []string) uint64 {
 	}
 	s.documentCount++
 	s.retainedBytes += newRetainedBytes
-	return segmentBufferBytes + s.retainedBytes + documentBytes
+	return segmentBufferBytes + s.retainedBytes + documentBytes, uint64(len(frequencies))
 }
 
 func (s *segmentState) writeRun(output io.WriteCloser) error {

@@ -11,6 +11,7 @@ import (
 
 type diskQueryPlan struct {
 	terms                 []diskQueryTerm
+	queryTerms            uint64
 	averageDocumentLength float64
 }
 
@@ -43,7 +44,10 @@ func buildDiskQueryPlan(ctx context.Context, idx *indexfile.Index, query string)
 		return diskQueryPlan{}, err
 	}
 
-	plan := diskQueryPlan{averageDocumentLength: idx.AverageDocumentLength()}
+	plan := diskQueryPlan{
+		queryTerms:            uint64(len(terms)),
+		averageDocumentLength: idx.AverageDocumentLength(),
+	}
 	for _, term := range terms {
 		cursor, found, err := idx.Postings(term)
 		if err != nil {

@@ -167,7 +167,7 @@ func TestSearchModelIsReproducible(t *testing.T) {
 		}
 
 		destination := filepath.Join(t.TempDir(), "index")
-		err = segment.BuildIndex(
+		_, err = segment.BuildIndex(
 			context.Background(),
 			corpus.NewTSVReader(bytes.NewReader(first.input)),
 			destination,

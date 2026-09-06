@@ -33,6 +33,10 @@ func (i *Index) AverageDocumentLength() float64 {
 	return i.averageDocumentLength
 }
 
+func (i *Index) PostingsCodec() PostingsCodec {
+	return i.postingsCodec
+}
+
 func (i *Index) DocumentLength(documentID index.DocumentID) uint32 {
 	return i.documentLengths[documentID]
 }

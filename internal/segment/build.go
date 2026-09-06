@@ -19,6 +19,18 @@ type BuildOptions struct {
 	TemporaryDirectory string
 }
 
+type BuildReport struct {
+	Documents                uint64
+	DocumentsWithTerms       uint64
+	Tokens                   uint64
+	Postings                 uint64
+	MaxAccountedSegmentBytes uint64
+	RunCount                 uint64
+	MergePasses              uint64
+	MergeInputBytes          uint64
+	MergeOutputBytes         uint64
+}
+
 type buildResult struct {
 	directory     string
 	documentsPath string
@@ -32,20 +44,20 @@ func BuildIndex(
 	records *corpus.TSVReader,
 	destination string,
 	options BuildOptions,
-) (err error) {
+) (report BuildReport, err error) {
 	if err := validateBuildOptions(options); err != nil {
-		return err
+		return BuildReport{}, err
 	}
 
 	result, err := build(ctx, records, options.FlushTarget, options.TemporaryDirectory)
 	if err != nil {
-		return fmt.Errorf("build runs: %w", err)
+		return BuildReport{}, fmt.Errorf("build runs: %w", err)
 	}
 	defer func() {
 		err = errors.Join(err, os.RemoveAll(result.directory))
 	}()
 
-	mergedRun, _, err := mergeRuns(
+	mergedRun, mergeStats, err := mergeRuns(
 		ctx,
 		result.directory,
 		result.runPaths,
@@ -53,12 +65,31 @@ func BuildIndex(
 		options.MergeWorkers,
 	)
 	if err != nil {
-		return fmt.Errorf("merge runs: %w", err)
+		return BuildReport{}, fmt.Errorf("merge runs: %w", err)
 	}
 	if err := writeIndex(ctx, destination, mergedRun, result.documentsPath, options.Codec); err != nil {
-		return fmt.Errorf("write index: %w", err)
+		return BuildReport{}, fmt.Errorf("write index: %w", err)
 	}
-	return nil
+
+	report = BuildReport{
+		Documents:                result.stats.documentCount,
+		DocumentsWithTerms:       result.stats.documentsWithTerms,
+		Tokens:                   result.stats.totalTokenCount,
+		Postings:                 result.stats.postingCount,
+		MaxAccountedSegmentBytes: result.stats.maxAccountedBytes,
+		RunCount:                 uint64(len(result.runPaths)),
+	}
+	if len(mergeStats) != 0 {
+		report.MergePasses = uint64(mergeStats[len(mergeStats)-1].passIndex + 1)
+	}
+	for _, stats := range mergeStats {
+		if stats.inputCount == 1 {
+			continue
+		}
+		report.MergeInputBytes += stats.inputBytes
+		report.MergeOutputBytes += stats.outputBytes
+	}
+	return report, nil
 }
 
 func validateBuildOptions(options BuildOptions) error {

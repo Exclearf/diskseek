@@ -336,7 +336,7 @@ func checkDiskExecutorParity(t *testing.T, input []byte, queries []differentialQ
 							exhaustiveStats.CandidatesScored != candidates || exhaustiveStats.AdvanceCalls != 0 {
 							t.Fatalf("stats = %+v, want postings/next %d, candidates %d, advances 0", exhaustiveStats, postings, candidates)
 						}
-						requestedBytes[codec.value] += exhaustiveStats.BytesRequested
+						requestedBytes[codec.value] += exhaustiveStats.LogicalBytesRequested
 					})
 				}
 			})
@@ -399,7 +399,7 @@ func buildDifferentialIndex(
 ) string {
 	t.Helper()
 	destination := filepath.Join(t.TempDir(), "index")
-	err := segment.BuildIndex(
+	_, err := segment.BuildIndex(
 		context.Background(),
 		corpus.NewTSVReader(bytes.NewReader(input)),
 		destination,

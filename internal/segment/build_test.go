@@ -47,6 +47,7 @@ func TestBuildCreatesOwnedArtifacts(t *testing.T) {
 		documentCount:      1,
 		documentsWithTerms: 1,
 		totalTokenCount:    1,
+		postingCount:       1,
 		maxAccountedBytes:  segmentBufferBytes + 14,
 	}
 	if result.stats != wantStats {
@@ -54,12 +55,12 @@ func TestBuildCreatesOwnedArtifacts(t *testing.T) {
 	}
 }
 
-func TestBuildIndexCreatesIndexAndRemovesTemporaryArtifacts(t *testing.T) {
+func TestBuildIndexReportsBuildAndRemovesTemporaryArtifacts(t *testing.T) {
 	temporaryDirectory := t.TempDir()
 	destination := filepath.Join(t.TempDir(), "index")
-	err := BuildIndex(
+	report, err := BuildIndex(
 		context.Background(),
-		corpus.NewTSVReader(strings.NewReader("0\tx\n")),
+		corpus.NewTSVReader(strings.NewReader("0\tgo go\n1\tgo search\n2\t\n")),
 		destination,
 		BuildOptions{
 			FlushTarget:        1,
@@ -71,6 +72,20 @@ func TestBuildIndexCreatesIndexAndRemovesTemporaryArtifacts(t *testing.T) {
 	)
 	if err != nil {
 		t.Fatal(err)
+	}
+	wantReport := BuildReport{
+		Documents:                3,
+		DocumentsWithTerms:       2,
+		Tokens:                   4,
+		Postings:                 3,
+		MaxAccountedSegmentBytes: segmentBufferBytes + 40,
+		RunCount:                 3,
+		MergePasses:              2,
+		MergeInputBytes:          222,
+		MergeOutputBytes:         160,
+	}
+	if report != wantReport {
+		t.Fatalf("build report = %+v, want %+v", report, wantReport)
 	}
 	if err := indexfile.Verify(context.Background(), destination); err != nil {
 		t.Fatalf("verify built index: %v", err)
@@ -110,7 +125,7 @@ func TestBuildIndexRejectsInvalidOptionsBeforeReadingCorpus(t *testing.T) {
 			test.invalidate(&options)
 			options.TemporaryDirectory = parent
 
-			err := BuildIndex(
+			_, err := BuildIndex(
 				context.Background(),
 				corpus.NewTSVReader(input),
 				filepath.Join(parent, "index"),

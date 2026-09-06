@@ -104,6 +104,7 @@ func TestBuildRunsWritesDocumentMetadataAndStatistics(t *testing.T) {
 		documentCount:      3,
 		documentsWithTerms: 2,
 		totalTokenCount:    3,
+		postingCount:       2,
 		maxAccountedBytes:  segmentBufferBytes + 23,
 	}
 	if stats != wantStats {

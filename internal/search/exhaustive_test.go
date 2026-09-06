@@ -42,11 +42,15 @@ func TestExhaustiveDAATTraversesPostingUnion(t *testing.T) {
 			t.Fatalf("result %d = %+v, want %+v", position, got[position], want[position])
 		}
 	}
-	if wantStats := (daatStats{
-		PostingsDecoded:  3,
-		NextCalls:        3,
-		CandidatesScored: 2,
-		BytesRequested:   22,
+	if wantStats := (QueryStats{
+		QueryTerms:            2,
+		MatchedTerms:          2,
+		PostingsDecoded:       3,
+		NextCalls:             3,
+		BlockHeadersRead:      2,
+		BlocksDecoded:         2,
+		CandidatesScored:      2,
+		LogicalBytesRequested: 22,
 	}); stats != wantStats {
 		t.Fatalf("stats = %+v, want %+v", stats, wantStats)
 	}
@@ -78,7 +82,7 @@ func TestExhaustiveDAATEmptyResults(t *testing.T) {
 func TestSearchDAATValidatesQueryWithZeroK(t *testing.T) {
 	idx := openDiskTestIndex(t, filepath.Join("..", "indexfile", "testdata", "golden-v1", "vbyte"))
 	results, stats, err := searchDAAT(context.Background(), idx, string([]byte{0xff}), 0)
-	if !errors.Is(err, analyzer.ErrInvalidUTF8) || results != nil || stats != (daatStats{}) {
+	if !errors.Is(err, analyzer.ErrInvalidUTF8) || results != nil || stats != (QueryStats{}) {
 		t.Fatalf("searchDAAT() = (%v, %+v, %v), want (nil, zero stats, %v)", results, stats, err, analyzer.ErrInvalidUTF8)
 	}
 }

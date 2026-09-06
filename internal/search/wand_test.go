@@ -114,14 +114,16 @@ func TestExecuteWAND(t *testing.T) {
 		}
 		checkWANDResults(t, got, want, &logical)
 
-		wantStats := wandStats{
-			NextCalls:        1,
-			BlockHeadersRead: 1,
-			BlocksDecoded:    1,
-			PostingsDecoded:  3,
-			BytesRequested:   14,
-			CandidatesScored: 1,
-			ThresholdChanges: 1,
+		wantStats := QueryStats{
+			QueryTerms:            1,
+			MatchedTerms:          1,
+			NextCalls:             1,
+			BlockHeadersRead:      1,
+			BlocksDecoded:         1,
+			PostingsDecoded:       3,
+			LogicalBytesRequested: 14,
+			CandidatesScored:      1,
+			ThresholdChanges:      1,
 		}
 		if stats != wantStats {
 			t.Fatalf("WAND stats = %+v, want %+v", stats, wantStats)
@@ -189,17 +191,30 @@ func TestWANDCandidatePruning(t *testing.T) {
 			"d5\tcommon\n"
 		disk, _ := buildWANDTestIndex(t, input)
 
-		exhaustive, exhaustiveStats, err := searchDAAT(context.Background(), disk, "rare common", 1)
+		exhaustive, exhaustiveStats, err := SearchWithStats(context.Background(), disk, "rare common", 1, ExecutorDAAT)
 		if err != nil {
 			t.Fatal(err)
 		}
-		wand, wandStats, err := searchWAND(context.Background(), disk, "rare common", 1)
+		wand, wandStats, err := SearchWithStats(context.Background(), disk, "rare common", 1, ExecutorWAND)
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		if !equalResultBits(wand, exhaustive) {
+		if !slices.EqualFunc(wand, exhaustive, func(left, right MeasuredResult) bool {
+			return left.DocumentID == right.DocumentID &&
+				left.ExternalID == right.ExternalID &&
+				math.Float64bits(left.Score) == math.Float64bits(right.Score)
+		}) {
 			t.Fatalf("WAND results = %+v, exhaustive results = %+v", wand, exhaustive)
+		}
+		if exhaustiveStats.QueryTerms != 2 || exhaustiveStats.MatchedTerms != 2 ||
+			wandStats.QueryTerms != 2 || wandStats.MatchedTerms != 2 {
+			t.Fatalf("query/matched terms = DAAT %d/%d, WAND %d/%d; want 2/2 for both",
+				exhaustiveStats.QueryTerms,
+				exhaustiveStats.MatchedTerms,
+				wandStats.QueryTerms,
+				wandStats.MatchedTerms,
+			)
 		}
 		if exhaustiveStats.CandidatesScored != 6 || wandStats.CandidatesScored != 1 {
 			t.Fatalf("candidates scored = exhaustive %d, WAND %d; want 6, 1", exhaustiveStats.CandidatesScored, wandStats.CandidatesScored)
@@ -238,7 +253,7 @@ func buildWANDTestIndex(t *testing.T, input string) (*indexfile.Index, index.Ind
 	}
 
 	destination := filepath.Join(t.TempDir(), "index")
-	err = segment.BuildIndex(
+	_, err = segment.BuildIndex(
 		context.Background(),
 		corpus.NewTSVReader(strings.NewReader(input)),
 		destination,
