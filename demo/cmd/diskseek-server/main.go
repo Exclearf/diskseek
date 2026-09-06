@@ -10,8 +10,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/Exclearf/diskseek/internal/httpapi"
-	"github.com/Exclearf/diskseek/internal/webui"
+	"github.com/Exclearf/diskseek/demo/internal/httpapi"
+	"github.com/Exclearf/diskseek/demo/internal/webui"
 	"github.com/spf13/cobra"
 )
 

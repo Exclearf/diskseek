@@ -12,9 +12,9 @@
 *.prof
 coverage.out
 
-/web/node_modules/
-/web/dist/
-/internal/webui/files/dist/
+/demo/web/node_modules/
+/demo/web/dist/
+/demo/internal/webui/files/dist/
 
 /.idea/
 /.vscode/

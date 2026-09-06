@@ -20,15 +20,15 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: web/package-lock.json
+          cache-dependency-path: demo/web/package-lock.json
       - name: Install web dependencies
-        working-directory: web
+        working-directory: demo/web
         run: npm ci
       - name: Lint web
-        working-directory: web
+        working-directory: demo/web
         run: npm run lint
       - name: Build web
-        working-directory: web
+        working-directory: demo/web
         run: npm run build
       - name: Check formatting
         run: test -z "$(gofmt -l .)"
